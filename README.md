@@ -6,6 +6,11 @@ This library enables you create P2P application.
 * Python3 (>=3.5)
 * [bin-json](https://github.com/namuyan/bin-json)
 
+## How to install
+```commandline
+pip install git+https://github.com/namuyan/p2p-python.git
+```
+
 ## How to use
 ```python
 from p2p_python.client import PeerClient
