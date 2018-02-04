@@ -23,6 +23,8 @@ C_BROADCAST = 'cmd/broadcast'
 C_GET_PEER_INFO = 'cmd/get-peer-info'
 C_GET_PEERS = 'cmd/get-peers'
 C_CHECK_REACHABLE = 'cmd/check-reachable'
+C_FILE_CHECK = 'cmd/file-check'
+C_FILE_GET = 'cmd/file-get'
 # Constant type
 T_REQUEST = 'type/request'
 T_RESPONSE = 'type/response'
@@ -165,7 +167,8 @@ class PeerClient:
             allow_list.append(client)
 
         elif msg['cmd'] == C_CHECK_REACHABLE:
-            check_port = msg['data']['port'] if msg['data']['port'] else client[3]['p2p_port']
+            f_by_user_req = 'port' in msg['data'] and msg['data']['port']
+            check_port = msg['data']['port'] if f_by_user_req else client[3]['p2p_port']
             temperate['data'] = is_reachable(host=client[2][0], port=check_port)
             allow_list.append(client)
 
@@ -175,11 +178,10 @@ class PeerClient:
         # send message
         send_count = self._send_msg(msg=temperate, allow=allow_list, deny=deny_list)
         # send ack
-        ack_count = 0
         if len(ack_list) > 0:
             temperate['type'] = T_ACK
-            temperate['data'] = None
-            ack_count = self._send_msg(msg=temperate, allow=ack_list)
+            temperate['data'] = send_count
+            self._send_msg(msg=temperate, allow=ack_list)
         # gc result
         if len(self.result.uuid2data) > self.p2p.listen * 1000:
             self.result.del_old()
@@ -200,7 +202,7 @@ class PeerClient:
     def type_ack(self, client, msg):
         uuid = msg['uuid']
         if not self.result.include(uuid=uuid):
-            self.result.put(uuid=uuid, item=(client, None))
+            self.result.put(uuid=uuid, item=(client, msg['data']))
             logging.debug("Get ack from \"%s\"" % client[3]['name'])
 
     def _send_msg(self, msg, allow=None, deny=None):

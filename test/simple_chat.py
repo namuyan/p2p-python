@@ -39,13 +39,16 @@ def chat(name):
                 elif cmds[0] == 'exc':
                     exec('print(' + input('>> ') + ')')
 
+                elif cmds[0] == 'client':
+                    print(check_client(pc=pc))
+
                 else:
                     print("Not found cmd", cmds)
             else:
                 data = '[{}][{:10}] {}'.format(time.strftime('%d-%H-%M-%S'), name, cmd)
                 pc.send_command(cmd=C_BROADCAST, data=data)
 
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             break
         except ConnectionError:
             print("Error, No members")
@@ -53,6 +56,7 @@ def chat(name):
             print("Error", e)
 
     pc.send_command(cmd=C_BROADCAST, data='Leave \"%s\"' % name)
+    pc.p2p.close_server()
 
 
 if __name__ == '__main__':
@@ -61,4 +65,5 @@ if __name__ == '__main__':
 """
 /join 2084
 /exc
+/client
 """
