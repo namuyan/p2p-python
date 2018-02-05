@@ -41,8 +41,9 @@ def trim_msg(item, num):
 
 
 class OrderDict:
-    uuid2data = dict()
-    lock = threading.Lock()
+    def __init__(self):
+        self.uuid2data = dict()
+        self.lock = threading.Lock()
 
     def get(self, uuid):
         return self.uuid2data[uuid][0]
@@ -79,8 +80,9 @@ class OrderDict:
 
 
 class QueueSystem:
-    que = list()
-    lock = threading.Lock()
+    def __init__(self):
+        self.que = list()
+        self.lock = threading.Lock()
 
     def create(self):
         que = queue.LifoQueue(maxsize=10)

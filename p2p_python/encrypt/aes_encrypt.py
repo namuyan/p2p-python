@@ -30,12 +30,12 @@ class AESCipher:
         raw = AESCipher._pad(raw)
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        return b64encode(iv + cipher.encrypt(raw)).decode()
+        return iv + cipher.encrypt(raw)
 
     @staticmethod
     def decrypt(key, enc, z=True):
+        assert type(enc) == bytes, 'Encrypt data is bytes'
         key = b64decode(str2byte(key))
-        enc = b64decode(str2byte(enc))
         iv = enc[:AES.block_size]
         cipher = AES.new(key, AES.MODE_CBC, iv)
         raw = AESCipher._unpad(cipher.decrypt(enc[AES.block_size:]))

@@ -25,14 +25,11 @@ MAX_RECEIVE_SIZE = 20000  # 20kBytes
 # constant
 SERVER_SIDE = 'Server'
 CLIENT_SIDE = 'Client'
-F_DEBUG = True
+F_DEBUG = False
 
 
 class Core(threading.Thread):
-    client = list()
     number = 0
-    stream_que = queue.LifoQueue(maxsize=100)
-    lock = threading.Lock()
     server_sock = None
     f_tor = False  # Use tor mode, Only allowed client mode
 
@@ -41,7 +38,6 @@ class Core(threading.Thread):
         :param port: P2P server port(int)
         :param net_ver: P2P network version(int)
         :param host: Server host(str)
-        :param accept: Accept connection from outside(bool)
         :param cp: Use zlib compress flag(bool)
         :param name: Server name(str)
         :param listen: P2P listen(int)
@@ -49,6 +45,9 @@ class Core(threading.Thread):
         :param keysize: RSA key size(int)
         """
         super().__init__(name='P2P_Core', daemon=True)
+        self.client = list()
+        self.stream_que = queue.LifoQueue(maxsize=100)
+        self.lock = threading.Lock()
         self.host = host
         self.port = port
         self.net_ver = net_ver
@@ -182,18 +181,19 @@ class Core(threading.Thread):
         # get client
         if len(self.client) == 0:
             raise ConnectionError('client connection is zero.')
-        elif len(msg_body) > MAX_RECEIVE_SIZE:
-            raise ConnectionRefusedError('Max message size is %dBytes' % MAX_RECEIVE_SIZE)
+        elif len(msg_body) > MAX_RECEIVE_SIZE + 1000:
+            raise ConnectionRefusedError('Max message size is %sKb '
+                                         '(You try %sKb)' % (MAX_RECEIVE_SIZE / 1000, len(msg_body) / 1000))
         elif client is None or client == list():
             client = random.choice(self.client)
         number, sock, host_port, header, aes_key, sock_type = client
 
         # send message
         cp = header['compress'] and self.header['compress']
-        msg_body = AESCipher.encrypt(key=aes_key, raw=msg_body, z=cp).encode()
+        msg_body = AESCipher.encrypt(key=aes_key, raw=msg_body, z=cp)
         msg_len = len(msg_body).to_bytes(4, 'big')
         sock.sendall(msg_len + msg_body)
-        # logging.debug("Send msg to \"%s\"" % header['name'])
+        logging.debug("Send %sKb to \"%s\"" % (len(msg_len + msg_body)  /1000, header['name']))
         return client
 
     def receive_msg(self, sock, host_port, header, aes_key, sock_type):
@@ -263,9 +263,9 @@ class Core(threading.Thread):
                     logging.debug("Receive long msg, len=%d, body=%d" % (msg_len, len(msg_body)))
 
                 if msg_len == 0:
-                    raise ConnectionAbortedError("Socket error, fall in loop.")
+                    raise ConnectionAbortedError("1:Socket error, fall in loop.")
                 elif len(msg_body) == 0:
-                    raise ConnectionAbortedError("Socket error, fall in loop.")
+                    raise ConnectionAbortedError("2:Socket error, fall in loop.")
                 elif len(msg_body) >= msg_len:
                     msg_body, msg_prefix = msg_body[:msg_len], msg_body[msg_len:]
                     msg_body = AESCipher.decrypt(key=aes_key, enc=msg_body, z=cp)
@@ -280,19 +280,20 @@ class Core(threading.Thread):
                     new_body = sock.recv(self.buffsize)
                     msg_body += new_body
                     if len(new_body) == 0:
-                        raise ConnectionAbortedError("Socket error, fall in loop.")
+                        raise ConnectionAbortedError("3:Socket error, fall in loop.")
                     elif len(msg_body) >= msg_len:
                         msg_body, msg_prefix = msg_body[:msg_len], msg_body[msg_len:]
                         msg_body = AESCipher.decrypt(key=aes_key, enc=msg_body, z=cp)
                         self.stream_que.put((client, msg_body))
                         break
-                    elif len(msg_body) > MAX_RECEIVE_SIZE:
-                        raise ConnectionAbortedError("Too many!(MAX %dBytes)" % MAX_RECEIVE_SIZE)
+                    elif len(msg_body) > MAX_RECEIVE_SIZE + 1000:
+                        raise ConnectionAbortedError("Too many!(MAX %dKB)" % (MAX_RECEIVE_SIZE // 1000))
                     else:
                         continue
 
             except ConnectionAbortedError as e:
-                logging.debug("ConnectionAbortedError. \"%s\"" % e, exc_info=False)
+                logging.debug("1:ConnectionAbortedError. \"%s\"" % e, exc_info=False)
+                logging.debug("2:msg_len=%d, msg_body=%d" % (msg_len, len(msg_body)))
                 break
             except ConnectionResetError:
                 logging.debug("Closed by peer. \"%s\"" % header['name'], exc_info=False)
