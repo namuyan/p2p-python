@@ -55,7 +55,9 @@ class FileShare:
         with open(recode_path, mode='bw') as f:
             f.write(b''.join(self.element))
 
-    def recode_share_file(self, path, overwrite=False, compress=False):
+    def recode_share_file(self, path=None, overwrite=False, compress=False):
+        if path is None:
+            path = self.path + '.share'
         if os.path.exists(path) and not overwrite:
             raise FileExistsError('You try to over write file.')
         with open(path, mode='bw') as f:

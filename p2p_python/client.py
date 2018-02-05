@@ -426,9 +426,11 @@ class PeerClient:
         # Stabilize
         peer_score = dict()
         near_info = dict()
+        near_score = dict()
         count = 0
+        need_connection = 3
         while not self.f_stop:
-            if len(self.p2p.client) < 3:
+            if len(self.p2p.client) < need_connection:
                 time.sleep(2)
             else:
                 time.sleep(60 * (1 + random.random()))
@@ -460,6 +462,7 @@ class PeerClient:
                 k, v = self.p2p.client2peer_format(client, self.peers)
                 if k not in near_info:
                     near_info[k] = dict()
+                    near_score[k] = len(msg['near'])
                 for host_port, header in msg['near']:
                     host_port = tuple(host_port)
                     if host_port in ignore_node:
@@ -490,6 +493,8 @@ class PeerClient:
                         continue
                     if host_port in near_info:
                         peer_score[host_port] = len(near_info[host_port])
+                    if host_port in near_score:
+                        peer_score[host_port] += near_score[host_port] // 2
                 # Remove already connected and same root node
                 logging.debug("PeerScore %s" % peer_score)
 
@@ -504,7 +509,7 @@ class PeerClient:
                     client = self.p2p.peer_format2client(k=host_port)
                     # Check number of peers
                     client, msg = self.send_command(cmd=C_GET_PEERS, client=client)
-                    if len(msg['near']) > 4:
+                    if len(msg['near']) >= need_connection:
                         self.p2p.remove_connection(client)
                         logging.debug("Remove connection %s:%d=%d" % (host_port[0], host_port[1], score))
                     elif host_port in peer_score:

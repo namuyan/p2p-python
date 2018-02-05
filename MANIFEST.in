@@ -1,0 +1,2 @@
+include p2p_python/name_list.txt
+exclude test/*
