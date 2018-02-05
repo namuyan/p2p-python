@@ -31,6 +31,7 @@ setup(
     description='Simple peer2peer library.',
     long_description=readme,
     packages=find_packages(),
+    package_data={'': ['*.txt']},
     license="MIT",
     install_requires=['pycrypto', 'xmltodict', 'requests', 'bjson', 'pysocks'],
     classifiers=[
