@@ -80,6 +80,7 @@ class PeerClient:
         self.f_stop = True
         for client in self.p2p.client:
             self.p2p.remove_connection(client)
+        self.p2p.stream_que.put((None, None))
         while not self.f_finish:
             time.sleep(1)
 
@@ -89,6 +90,8 @@ class PeerClient:
             while not self.f_stop:
                 try:
                     client, raw_byte_msg = self.p2p.stream_que.get()
+                    if client is None:
+                        break
                     msg = bjson.loads(raw_byte_msg)
 
                     if msg['type'] == T_REQUEST:
@@ -403,6 +406,14 @@ class PeerClient:
                     return raw
             else:
                 raise FileReceiveError('File hash don\'t match. Please retry.')
+
+    def remove_file(self, file_hash):
+        file_hash = file_hash.lower()
+        file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
+        try:
+            os.remove(file_path)
+        except:
+            pass
 
     def stabilize(self):
         time.sleep(5)

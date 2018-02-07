@@ -4,9 +4,10 @@
 import threading
 import time
 import os.path
-from hashlib import sha1
+from hashlib import sha1, sha256
 import bjson
 import logging
+import random
 from binascii import hexlify
 from .core import MAX_RECEIVE_SIZE
 from .client import FileReceiveError
@@ -16,7 +17,7 @@ from .encrypt.aes_encrypt import AESCipher
 class FileShare:
     def __init__(self, pc, path):
         self.pc = pc
-        self.name = os.path.split(path)[-1]
+        self.name = os.path.split(path)[1]
         self.path = path
         self.element = list()
         self.content = dict()
@@ -33,16 +34,21 @@ class FileShare:
         self.content = {
             'name': self.name,
             'path': self.path,
-            'hash': h_list,
+            'size': len(raw) / 1000,
+            'element': h_list,
+            'hash': sha256(raw).hexdigest(),
+            'signer': None,
+            'sign': None,
             'date': time.strftime('%Y-%m-%d %H:%M:%S'),
             'time': int(time.time())}
 
     def load_share_file(self):
         self.content = bjson.loads(self._get_file(self.path))
-        self.element = [None] * len(self.content['hash'])
+        self.element = [None] * len(self.content['element'])
         self.name = self.content['name']
+        self.path = self.content['path']
 
-    def recode_raw_file(self, recode_dir, overwrite=False):
+    def recode_raw_file(self, recode_dir, pwd=None, overwrite=False):
         if not os.path.exists(recode_dir):
             raise FileNotFoundError('Not found recode dir.')
         recode_path = os.path.join(recode_dir, self.name)
@@ -53,7 +59,11 @@ class FileShare:
             complete = str(round(len(check) / len(self.element) * 100, 2))
             raise FileNotFoundError('Isn\'t all file downloaded, ({}% complete)'.format(complete))
         with open(recode_path, mode='bw') as f:
-            f.write(b''.join(self.element))
+            if pwd:
+                raw = AESCipher.decrypt(key=pwd, enc=b''.join(self.element))
+            else:
+                raw = b''.join(self.element)
+            f.write(raw)
 
     def recode_share_file(self, path=None, overwrite=False, compress=False):
         if path is None:
@@ -71,6 +81,10 @@ class FileShare:
         # return uncompleted element index
         return [i for i in range(len(self.element)) if self.element[i] is None]
 
+    def remove_sharefile_related(self):
+        for hash_bin in self.content['element']:
+            self.pc.remove_file(hexlify(hash_bin).decode())
+
     def get_tmp_files(self):
         # return [(path, size, time), ...]
         files = list()
@@ -86,28 +100,31 @@ class FileShare:
         return files
 
     def download(self, num=3, wait=True):
-        if 'hash' not in self.content:
+        if 'element' not in self.content:
             return False
-        request = [i for i in range(len(self.content['hash'])) if self.element[i] is None]
+        request = [i for i in range(len(self.content['element'])) if self.element[i] is None]
         lock = threading.Lock()
-        thread = list()
+        threads = list()
         for n in range(num):
             t = threading.Thread(target=self._download, args=(request, lock), name='FileShare', daemon=True)
             t.start()
-            thread.append(t)
+            threads.append(t)
             time.sleep(1)
         if wait:
-            for t in thread:
+            for t in threads:
                 t.join()
         else:
-            return request
+            return request, threads
 
     def _download(self, request, lock):
         while True:
             with lock:
-                try: i = request.pop(0)
-                except IndexError: return
-            hex_hash = hexlify(self.content['hash'][i]).decode()
+                try:
+                    i = random.choice(request)
+                    request.remove(i)
+                except IndexError:
+                    return
+            hex_hash = hexlify(self.content['element'][i]).decode()
             logging.debug("Try %d=0x%s" % (i, hex_hash))
             retry = 5
             while True:
@@ -139,8 +156,7 @@ class FileShare:
         h = list()
         index = 0
         while len(raw) > index:
-            data = raw[index:index + MAX_RECEIVE_SIZE]
-            h.append(sha1(data).digest())
-            e.append(data)
+            h.append(sha1(raw[index:index + MAX_RECEIVE_SIZE]).digest())
+            e.append(raw[index:index + MAX_RECEIVE_SIZE])
             index += MAX_RECEIVE_SIZE
         return h, e
