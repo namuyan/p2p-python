@@ -10,4 +10,4 @@ __all__ = [
     UpnpClient,
     str2byte, byte2str, OrderDict,
 ]
-__version__ = '0.0.4'
+__version__ = '0.0.5'

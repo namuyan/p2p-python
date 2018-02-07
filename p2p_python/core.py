@@ -10,8 +10,7 @@ import queue
 import os
 import logging
 import socks
-from .encrypt.aes_encrypt import AESCipher
-from .encrypt.rsa_encrypt import EncryptRSA
+from .encryption import AESCipher, EncryptRSA
 from .utils import get_here_path
 
 

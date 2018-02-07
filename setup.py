@@ -33,7 +33,7 @@ setup(
     packages=find_packages(),
     package_data={'': ['*.txt']},
     license="MIT",
-    install_requires=['pycrypto', 'xmltodict', 'requests', 'bjson', 'pysocks'],
+    install_requires=['pycryptodomex', 'xmltodict', 'requests', 'bjson', 'pysocks'],
     classifiers=[
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.5',

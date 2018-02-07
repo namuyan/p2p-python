@@ -4,20 +4,19 @@
 from .utils import str2byte
 
 # For RSA
-from Crypto.PublicKey import RSA
-from Crypto import Random
-from Crypto.Cipher import PKCS1_OAEP
-from Crypto.Signature import pkcs1_15
-from Crypto.Hash import SHA256
+from Cryptodome.PublicKey import RSA
+from Cryptodome import Random
+from Cryptodome.Cipher import PKCS1_OAEP
+from Cryptodome.Signature import pkcs1_15
+from Cryptodome.Hash import SHA256
 
 # For ECDSA
 # from Crypto.Hash import SHA256
-from Crypto.PublicKey import ECC
-from Crypto.Signature import DSS
+from Cryptodome.PublicKey import ECC
+from Cryptodome.Signature import DSS
 
 # For AES
-# from Crypto import Random
-from Crypto.Cipher import AES
+from Cryptodome.Cipher import AES
 from base64 import b64encode, b64decode
 import zlib
 import os
@@ -105,12 +104,12 @@ class AESCipher:
         raw = AESCipher._pad(raw)
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        return b64encode(iv + cipher.encrypt(raw)).decode()
+        return iv + cipher.encrypt(raw)
 
     @staticmethod
     def decrypt(key, enc, z=True):
+        assert type(enc) == bytes, 'Encrypt data is bytes'
         key = b64decode(str2byte(key))
-        enc = b64decode(str2byte(enc))
         iv = enc[:AES.block_size]
         cipher = AES.new(key, AES.MODE_CBC, iv)
         raw = AESCipher._unpad(cipher.decrypt(enc[AES.block_size:]))

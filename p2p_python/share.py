@@ -11,7 +11,7 @@ import random
 from binascii import hexlify
 from .core import MAX_RECEIVE_SIZE
 from .client import FileReceiveError
-from .encrypt.aes_encrypt import AESCipher
+from .encryption import AESCipher
 
 
 class FileShare:
