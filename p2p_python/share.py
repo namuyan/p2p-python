@@ -19,7 +19,7 @@ class FileShare:
         self.pc = pc
         self.name = os.path.split(path)[1]
         self.path = path
-        self.element = list()
+        self.f_contain = list()
         self.content = dict()
 
     @staticmethod
@@ -27,16 +27,24 @@ class FileShare:
         return AESCipher.create_key()
 
     def load_raw_file(self, pwd=None):
-        raw = self._get_file(self.path)
-        if pwd:
-            raw = AESCipher.encrypt(key=pwd, raw=raw)
-        h_list, self.element = self._split_maxsize(raw)
+        if not os.path.isfile(self.path):
+            raise Exception('It\'s a dir.')
+        h_list = list()
+        sha_hash = sha256()
+        with open(self.path, mode='br') as f:
+            while True:
+                raw = f.read(MAX_RECEIVE_SIZE)
+                if not raw:
+                    break
+                if pwd: raw = AESCipher.encrypt(key=pwd, raw=raw)
+                h_list.append(sha1(raw).digest())
+                sha_hash.update(raw)
         self.content = {
             'name': self.name,
             'path': self.path,
-            'size': len(raw) / 1000,
+            'size': os.path.getsize(self.path) / 1000,
             'element': h_list,
-            'hash': sha256(raw).hexdigest(),
+            'hash': sha_hash.hexdigest(),
             'signer': None,
             'sign': None,
             'date': time.strftime('%Y-%m-%d %H:%M:%S'),
@@ -45,8 +53,9 @@ class FileShare:
     def load_share_file(self):
         if len(self.content) != 0:
             raise Exception('Already loaded share file.')
-        self.content = bjson.loads(self._get_file(self.path))
-        self.element = [None] * len(self.content['element'])
+        with open(self.path, mode='br') as f:
+            self.content = bjson.load(fp=f)
+        self.f_contain = [False] * len(self.content['element'])
         self.name = self.content['name']
         self.path = self.content['path']
 
@@ -58,14 +67,14 @@ class FileShare:
             raise FileExistsError('You try to overwrite file.')
         check = self.check()
         if len(check) > 0:
-            complete = str(round(len(check) / len(self.element) * 100, 2))
+            complete = str(round(len(check) / len(self.f_contain) * 100, 2))
             raise FileNotFoundError('Isn\'t all file downloaded, ({}% complete)'.format(complete))
-        with open(recode_path, mode='bw') as f:
-            if pwd:
-                raw = AESCipher.decrypt(key=pwd, enc=b''.join(self.element))
-            else:
-                raw = b''.join(self.element)
-            f.write(raw)
+        with open(recode_path, mode='ba') as f:
+            for h in self.content['element']:
+                raw = self.pc.get_file(file_hash=hexlify(h).decode())
+                if pwd:
+                    raw = AESCipher.decrypt(key=pwd, enc=raw)
+                f.write(raw)
 
     def recode_share_file(self, path=None, overwrite=False, compress=False):
         if path is None:
@@ -75,13 +84,28 @@ class FileShare:
         with open(path, mode='bw') as f:
             bjson.dump(self.content, fp=f, compress=compress)
 
-    def share_raw_by_p2p(self):
-        for raw in self.element:
-            self.pc.share_file(data=raw)
+    def share_raw_by_p2p(self, pwd=None):
+        with open(self.path, mode='br') as f:
+            while True:
+                raw = f.read(MAX_RECEIVE_SIZE)
+                if not raw: return
+                if pwd: raw = AESCipher.encrypt(key=pwd, raw=raw)
+                self.pc.share_file(data=raw)
+
+    def get_all_binary(self, pwd=None):
+        result = b''
+        with open(self.path, mode='br') as f:
+            while True:
+                raw = f.read(MAX_RECEIVE_SIZE)
+                if not raw:
+                    return result
+                if pwd:
+                    raw = AESCipher.encrypt(key=pwd, raw=raw)
+                result += raw
 
     def check(self):
         # return uncompleted element index
-        return [i for i in range(len(self.element)) if self.element[i] is None]
+        return [i for i in range(len(self.f_contain)) if not self.f_contain[i]]
 
     def remove_sharefile_related(self):
         for hash_bin in self.content['element']:
@@ -104,7 +128,7 @@ class FileShare:
     def download(self, num=3, wait=True):
         if 'element' not in self.content:
             return False
-        request = [i for i in range(len(self.content['element'])) if self.element[i] is None]
+        request = [i for i in range(len(self.content['element'])) if not self.f_contain[i]]
         lock = threading.Lock()
         threads = list()
         f_finish = [None] * num
@@ -140,8 +164,9 @@ class FileShare:
             while True:
                 try:
                     raw = self.pc.get_file(file_hash=hex_hash)
-                    with lock:
-                        self.element[i] = raw
+                    if hex_hash == sha1(raw).hexdigest():
+                        with lock:
+                            self.f_contain[i] = True
                     logging.debug("Success %d=0x%s" % (i, hex_hash))
                     break
                 except (FileReceiveError, TimeoutError) as e:
@@ -151,23 +176,8 @@ class FileShare:
                         continue
                     else:
                         logging.info("Failed %d=0x%s" % (i, hex_hash))
+                        # import traceback
+                        # traceback.print_exc()
                         allow_fail -= 1
                         break
 
-    @staticmethod
-    def _get_file(path):
-        if not os.path.exists(path):
-            raise FileNotFoundError(path)
-        with open(path, mode='br') as f:
-            return f.read()
-
-    @staticmethod
-    def _split_maxsize(raw):
-        e = list()
-        h = list()
-        index = 0
-        while len(raw) > index:
-            h.append(sha1(raw[index:index + MAX_RECEIVE_SIZE]).digest())
-            e.append(raw[index:index + MAX_RECEIVE_SIZE])
-            index += MAX_RECEIVE_SIZE
-        return h, e
