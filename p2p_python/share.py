@@ -26,7 +26,7 @@ class FileShare:
     def create_ley():
         return AESCipher.create_key()
 
-    def load_raw_file(self, pwd=None):
+    def share_raw_file(self, pwd=None):
         if not os.path.isfile(self.path):
             raise Exception('It\'s a dir.')
         h_list = list()
@@ -36,9 +36,11 @@ class FileShare:
                 raw = f.read(MAX_RECEIVE_SIZE)
                 if not raw:
                     break
-                if pwd: raw = AESCipher.encrypt(key=pwd, raw=raw)
-                h_list.append(sha1(raw).digest())
                 sha_hash.update(raw)
+                if pwd:
+                    raw = AESCipher.encrypt(key=pwd, raw=raw)
+                h_list.append(sha1(raw).digest())
+                self.pc.share_file(data=raw)
         self.content = {
             'name': self.name,
             'path': self.path,
@@ -69,12 +71,16 @@ class FileShare:
         if len(check) > 0:
             complete = str(round(len(check) / len(self.f_contain) * 100, 2))
             raise FileNotFoundError('Isn\'t all file downloaded, ({}% complete)'.format(complete))
+        sha_hash = sha256()
         with open(recode_path, mode='ba') as f:
             for h in self.content['element']:
                 raw = self.pc.get_file(file_hash=hexlify(h).decode())
                 if pwd:
                     raw = AESCipher.decrypt(key=pwd, enc=raw)
+                sha_hash.update(raw)
                 f.write(raw)
+        if sha_hash.hexdigest() != self.content['hash']:
+            raise Exception('SHA256 hash don\'t match.')
 
     def recode_share_file(self, path=None, overwrite=False, compress=False):
         if path is None:
@@ -84,24 +90,22 @@ class FileShare:
         with open(path, mode='bw') as f:
             bjson.dump(self.content, fp=f, compress=compress)
 
-    def share_raw_by_p2p(self, pwd=None):
-        with open(self.path, mode='br') as f:
-            while True:
-                raw = f.read(MAX_RECEIVE_SIZE)
-                if not raw: return
-                if pwd: raw = AESCipher.encrypt(key=pwd, raw=raw)
-                self.pc.share_file(data=raw)
-
     def get_all_binary(self, pwd=None):
         result = b''
-        with open(self.path, mode='br') as f:
-            while True:
-                raw = f.read(MAX_RECEIVE_SIZE)
-                if not raw:
-                    return result
-                if pwd:
-                    raw = AESCipher.encrypt(key=pwd, raw=raw)
-                result += raw
+        check = self.check()
+        sha_hash = sha256()
+        if len(check) > 0:
+            complete = str(round(len(check) / len(self.f_contain) * 100, 2))
+            raise FileNotFoundError('Isn\'t all file downloaded, ({}% complete)'.format(complete))
+        for h in self.content['element']:
+            raw = self.pc.get_file(file_hash=hexlify(h).decode())
+            if pwd:
+                raw = AESCipher.decrypt(key=pwd, enc=raw)
+            sha_hash.update(raw)
+            result += raw
+        if sha_hash.hexdigest() != self.content['hash']:
+            raise Exception('SHA256 hash don\'t match.')
+        return result
 
     def check(self):
         # return uncompleted element index
@@ -176,8 +180,8 @@ class FileShare:
                         continue
                     else:
                         logging.info("Failed %d=0x%s" % (i, hex_hash))
-                        # import traceback
-                        # traceback.print_exc()
+                        import traceback
+                        traceback.print_exc()
                         allow_fail -= 1
                         break
 

@@ -368,7 +368,7 @@ class PeerClient:
 
     def share_file(self, data):
         assert type(data) == bytes, "You need input raw binary data"
-        assert len(data) <= MAX_RECEIVE_SIZE, "Your data %dKb exceed MAX (%dKb) size." % \
+        assert len(data) < MAX_RECEIVE_SIZE + 1000, "Your data %dKb exceed MAX (%dKb) size." % \
                                              (len(data) // 1000, MAX_RECEIVE_SIZE // 1000)
         file_hash = sha1(data).hexdigest()
         file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
