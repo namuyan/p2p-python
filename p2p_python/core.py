@@ -19,7 +19,7 @@ CLIENT_VER = next((line.split('=')[1].strip().replace("'", '')
                    for line in open(os.path.join(HEAR_PATH, '__init__.py'))
                    if line.startswith('__version__ = ')), '0.0.dev0')
 NAME_LIST = open(os.path.join(HEAR_PATH, 'name_list.txt')).read().split()
-MAX_RECEIVE_SIZE = 20000  # 20kBytes
+MAX_RECEIVE_SIZE = 50000  # 50kBytes
 
 # constant
 SERVER_SIDE = 'Server'
@@ -32,7 +32,7 @@ class Core(threading.Thread):
     server_sock = None
     f_tor = False  # Use tor mode, Only allowed client mode
 
-    def __init__(self, port, net_ver, host='', cp=True, name=None, listen=10, buffsize=1024, keysize=3072):
+    def __init__(self, port, net_ver, host='', cp=True, name=None, listen=10, buffsize=2048, keysize=3072):
         """
         :param port: P2P server port(int)
         :param net_ver: P2P network version(int)

@@ -43,6 +43,8 @@ class FileShare:
             'time': int(time.time())}
 
     def load_share_file(self):
+        if len(self.content) != 0:
+            raise Exception('Already loaded share file.')
         self.content = bjson.loads(self._get_file(self.path))
         self.element = [None] * len(self.content['element'])
         self.name = self.content['name']
@@ -105,8 +107,9 @@ class FileShare:
         request = [i for i in range(len(self.content['element'])) if self.element[i] is None]
         lock = threading.Lock()
         threads = list()
+        f_finish = [None] * num
         for n in range(num):
-            t = threading.Thread(target=self._download, args=(request, lock), name='FileShare', daemon=True)
+            t = threading.Thread(target=self._download, args=(request, f_finish, lock), name='FileShare', daemon=True)
             t.start()
             threads.append(t)
             time.sleep(1)
@@ -114,15 +117,22 @@ class FileShare:
             for t in threads:
                 t.join()
         else:
-            return request, threads
+            return request, f_finish
 
-    def _download(self, request, lock):
+    def _download(self, request, f_finish, lock):
+        allow_fail = max(5, len(request) // 1000)
         while True:
+            # check retry counts
+            if allow_fail < 0:
+                f_finish.pop()
+                return
+            # get index, hash to try
             with lock:
                 try:
                     i = random.choice(request)
                     request.remove(i)
                 except IndexError:
+                    f_finish.pop()
                     return
             hex_hash = hexlify(self.content['element'][i]).decode()
             logging.debug("Try %d=0x%s" % (i, hex_hash))
@@ -140,7 +150,8 @@ class FileShare:
                         time.sleep(1)
                         continue
                     else:
-                        logging.debug("Failed %d=0x%s" % (i, hex_hash))
+                        logging.info("Failed %d=0x%s" % (i, hex_hash))
+                        allow_fail -= 1
                         break
 
     @staticmethod
