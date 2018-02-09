@@ -8,7 +8,7 @@ import logging
 import bjson
 import os.path
 import random
-from hashlib import sha1
+from hashlib import sha256
 from tempfile import gettempdir
 from .core import Core, MAX_RECEIVE_SIZE
 from .utils import OrderDict, QueueSystem, is_reachable, trim_msg, get_data_path
@@ -370,18 +370,17 @@ class PeerClient:
         assert type(data) == bytes, "You need input raw binary data"
         assert len(data) < MAX_RECEIVE_SIZE + 1000, "Your data %dKb exceed MAX (%dKb) size." % \
                                              (len(data) // 1000, MAX_RECEIVE_SIZE // 1000)
-        file_hash = sha1(data).hexdigest()
+        file_hash = sha256(data).hexdigest()
         file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
         with open(file_path, mode='bw') as f:
             f.write(data)
         return file_hash
 
-    def get_file(self, file_hash):
+    def get_file(self, file_hash, only_check=False):
         file_hash = file_hash.lower()
         file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
         if os.path.exists(file_path):
-            with open(file_path, mode='br') as f:
-                return f.read()
+            return True if only_check else open(file_path, mode='br').read()
         else:
             # Ask all near nodes
             if len(self.p2p.client) == 0:
@@ -400,10 +399,10 @@ class PeerClient:
                 cmd=C_FILE_GET, data={'hash': file_hash, 'asked': nears}, client=hopeful)
             if raw is None:
                 raise FileReceiveError('Peers send me Null data. Please retry.')
-            if sha1(raw).hexdigest() == file_hash:
+            if sha256(raw).hexdigest() == file_hash:
                 with open(file_path, mode='bw') as f:
                     f.write(raw)
-                    return raw
+                return True if only_check else raw
             else:
                 raise FileReceiveError('File hash don\'t match. Please retry.')
 

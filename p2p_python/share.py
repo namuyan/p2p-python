@@ -4,7 +4,7 @@
 import threading
 import time
 import os.path
-from hashlib import sha1, sha256
+from hashlib import sha256
 import bjson
 import logging
 import random
@@ -39,7 +39,7 @@ class FileShare:
                 sha_hash.update(raw)
                 if pwd:
                     raw = AESCipher.encrypt(key=pwd, raw=raw)
-                h_list.append(sha1(raw).digest())
+                h_list.append(sha256(raw).digest())
                 self.pc.share_file(data=raw)
         self.content = {
             'name': self.name,
@@ -167,12 +167,14 @@ class FileShare:
             retry = 5
             while True:
                 try:
-                    raw = self.pc.get_file(file_hash=hex_hash)
-                    if hex_hash == sha1(raw).hexdigest():
+                    raw = self.pc.get_file(file_hash=hex_hash, only_check=True)
+                    if raw is True:
                         with lock:
                             self.f_contain[i] = True
-                    logging.debug("Success %d=0x%s" % (i, hex_hash))
-                    break
+                        logging.debug("Success %d=0x%s" % (i, hex_hash))
+                        break
+                    else:
+                        raise FileReceiveError('Failed get file, retry')
                 except (FileReceiveError, TimeoutError) as e:
                     retry -= 1
                     if retry > 0:

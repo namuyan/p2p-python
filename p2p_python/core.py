@@ -19,7 +19,7 @@ CLIENT_VER = next((line.split('=')[1].strip().replace("'", '')
                    for line in open(os.path.join(HEAR_PATH, '__init__.py'))
                    if line.startswith('__version__ = ')), '0.0.dev0')
 NAME_LIST = open(os.path.join(HEAR_PATH, 'name_list.txt')).read().split()
-MAX_RECEIVE_SIZE = 65000  # 65kBytes
+MAX_RECEIVE_SIZE = 260000  # 260kBytes
 
 # constant
 SERVER_SIDE = 'Server'
