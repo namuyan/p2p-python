@@ -1,5 +1,6 @@
 p2p-python
 ==========
+I seek a library that can make a simple P2P network.  
 This library enables you create P2P application.
 
 ## Require
@@ -10,6 +11,7 @@ This library enables you create P2P application.
 ```commandline
 pip install git+https://github.com/namuyan/p2p-python.git
 ```
+Look => [HOWTOUSE.md](HOWTOUSE.md)
 
 ## How to use
 ```python

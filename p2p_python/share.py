@@ -178,7 +178,7 @@ class FileShare:
                 except (FileReceiveError, TimeoutError) as e:
                     retry -= 1
                     if retry > 0:
-                        time.sleep(1)
+                        time.sleep(5)
                         continue
                     else:
                         logging.info("Failed %d=0x%s" % (i, hex_hash))

@@ -457,8 +457,11 @@ class PeerClient:
         while not self.f_stop:
             if len(self.p2p.client) < need_connection:
                 time.sleep(2)
+            elif count % 24 == 0:
+                time.sleep(10 * (1 + random.random()))
             else:
-                time.sleep(60 * (1 + random.random()))
+                time.sleep(5)
+                continue
             count += 1
             try:
                 if len(self.p2p.client) == 0 and len(self.peers) > 0:
