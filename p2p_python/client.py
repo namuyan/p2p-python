@@ -8,6 +8,7 @@ import logging
 import bjson
 import os.path
 import random
+import copy
 from hashlib import sha256
 from tempfile import gettempdir
 from .core import Core, MAX_RECEIVE_SIZE
@@ -189,25 +190,34 @@ class PeerClient:
         elif msg['cmd'] == C_FILE_GET:
             def asking():
                 # ファイル要求元のNodeに近いNode群を無視する
-                ignores = [self.p2p.peer_format2client(host_port) for host_port in already_asked]
-                candidates = list()
+                nears = [self.p2p.peer_format2client(host_port) for host_port in already_asked]
+                nears = [c for c in nears if c is not None]  # Noneを除く
+                random.shuffle(nears)
+                # nearを最後に探索するように並び替え
+                client_ = copy.copy(self.p2p.client)
+                random.shuffle(client_)
+                for c in copy.copy(client_):
+                    if c in nears:
+                        client_.remove(c)
+                client_ += nears  # 最後に付け足し
+
                 # ファイル所持Nodeを見つけたら即コマンド送る、それ以外は候補をリスト化
-                for ask_client in self.p2p.client:
-                    if ask_client not in ignores:
-                        try:
-                            dummy, data = self.send_command(
-                                cmd=C_FILE_CHECK, client=ask_client, data={'hash': file_hash, 'uuid': msg['uuid']})
-                        except Exception as e:
-                            logging.debug("Check file existence one by one, %s", e)
-                            continue
-                        if data['have'] is True:
-                            # ファイル所持Nodeを発見したのでGETを即送信
-                            hopeful = ask_client
-                            break
-                        elif data['asked'] is False:
-                            candidates.append(ask_client)
-                        else:
-                            pass
+                candidates = list()
+                for ask_client in client_:
+                    try:
+                        dummy, data = self.send_command(
+                            cmd=C_FILE_CHECK, client=ask_client, data={'hash': file_hash, 'uuid': msg['uuid']})
+                    except Exception as e:
+                        logging.debug("Check file existence one by one, %s", e)
+                        continue
+                    if data['have'] is True:
+                        # ファイル所持Nodeを発見したのでGETを即送信
+                        hopeful = ask_client
+                        break
+                    elif data['asked'] is False:
+                        candidates.append(ask_client)
+                    else:
+                        pass
                 else:
                     # 候補がいなければここで探索終了
                     if len(candidates) == 0:
@@ -216,16 +226,19 @@ class PeerClient:
                         logging.debug("Asking, stop asking file.")
                         return
                     else:
-                        hopeful = random.choice(candidates)
+                        hopeful = candidates[0]  # 一番新しいのを候補
 
                 logging.debug("Asking, Candidate=%d, hopeful=\"%s\"" % (len(candidates), hopeful[3]['name']))
                 try:
                     my_peers = [self.p2p.client2peer_format(c, dict())[0] for c in self.p2p.client]
                     data = {'hash': file_hash, 'asked': my_peers}
                     self.file_client_path.put(uuid=msg['uuid'], item=(client, hopeful))
-                    dummy, data = self.send_command(cmd=C_FILE_GET, data=data, client=hopeful, wait=20)
+                    from_client, data = self.send_command(cmd=C_FILE_GET, data=data, client=hopeful, wait=20)
                     temperate['data'] = data
-                    logging.debug("Success get file 0x%s" % file_hash)
+                    if data is None:
+                        logging.debug("Get null from \"%s\" 0x%s" % (from_client[3]['name'], file_hash))
+                    else:
+                        logging.debug("Success get file from \"%s\" 0x%s" % (from_client[3]['name'], file_hash))
                 except:
                     logging.debug("Failed to get file 0x%s, %s" % (file_hash, hopeful[3]['name']))
                     temperate['data'] = None
@@ -274,7 +287,7 @@ class PeerClient:
         if len(self.waiting_ack) > 50:
             self.waiting_ack = self.waiting_ack[25:]
         # debug
-        logging.debug("All=%d, Send=%d, Ack=%d" % (len(self.p2p.client), send_count, ack_count))
+        # logging.debug("All=%d, Send=%d, Ack=%d" % (len(self.p2p.client), send_count, ack_count))
 
     def type_response(self, client, msg):
         uuid = msg['uuid']
@@ -385,7 +398,9 @@ class PeerClient:
             # Ask all near nodes
             if len(self.p2p.client) == 0:
                 raise FileReceiveError('No client found.')
-            for client in self.p2p.client:
+            client_ = copy.copy(self.p2p.client)
+            random.shuffle(client_)
+            for client in client_:
                 dummy, msg = self.send_command(cmd=C_FILE_CHECK, data={'hash': file_hash, 'uuid': 0}, client=client)
                 if msg['have']:
                     hopeful = client
