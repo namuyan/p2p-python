@@ -24,9 +24,9 @@ import os
 
 class EncryptRSA:
     @staticmethod
-    def create_keypair(b=3072):
+    def create_keypair(b=3072, pwd=None):
         rsa = RSA.generate(b, Random.new().read)
-        private_pem = rsa.exportKey(format='PEM')
+        private_pem = rsa.exportKey(format='PEM', passphrase=pwd)
         public_pem = rsa.publickey().exportKey()
         return private_pem.decode(), public_pem.decode()
 
@@ -37,8 +37,8 @@ class EncryptRSA:
         return pkcs1_15.new(key).sign(h)
 
     @staticmethod
-    def verify(public_pem, message, signature, pwd=None):
-        key = RSA.importKey(str2byte(public_pem), passphrase=pwd)
+    def verify(public_pem, message, signature):
+        key = RSA.importKey(str2byte(public_pem))
         h = SHA256.new(message)
         # Note: When failed verification, raised ValueError
         pkcs1_15.new(key).verify(h, signature)
@@ -49,9 +49,9 @@ class EncryptRSA:
         return b64encode(cipher.encrypt(message)).decode()
 
     @staticmethod
-    def decrypt(private_pem, enc):
+    def decrypt(private_pem, enc, pwd=None):
         msg = b64decode(str2byte(enc))
-        cipher = PKCS1_OAEP.new(RSA.importKey(str2byte(private_pem)))
+        cipher = PKCS1_OAEP.new(RSA.importKey(str2byte(private_pem), passphrase=pwd))
         return cipher.decrypt(msg)
 
 
@@ -60,16 +60,16 @@ class EncryptECDSA:
     PRIME256V1 = 'prime256v1'
 
     @staticmethod
-    def create_keypair(curve=SECP256R1):
+    def create_keypair(curve=SECP256R1, pwd=None):
         key = ECC.generate(curve=curve)  # prime256v1, secp256r1
-        private_pem = key.export_key(format='PEM')
-        public_pem = key.public_key().export_key(format='PEM')
+        private_pem = key.export_key(format='PEM', passphrase=pwd)
+        public_pem = key.public_key().export_key(format='PEM', passphrase=pwd)
         return private_pem.decode(), public_pem.decode()
 
     @staticmethod
-    def sign(private_pem, message):
+    def sign(private_pem, message, pwd=None):
         assert type(message) == bytes, 'message should be bytes'
-        key = ECC.import_key(str2byte(private_pem))
+        key = ECC.import_key(str2byte(private_pem), passphrase=pwd)
         h = SHA256.new(message)
         signer = DSS.new(key, 'fips-186-3')
         return signer.sign(h)
