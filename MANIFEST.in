@@ -1,3 +1,3 @@
 include p2p_python/name_list.txt
-include p2p_python/public.master.pem
+include p2p_python/pem/*
 exclude test/*
