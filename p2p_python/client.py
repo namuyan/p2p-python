@@ -11,8 +11,10 @@ import random
 import copy
 from hashlib import sha256
 from tempfile import gettempdir
+from binascii import unhexlify
 from .core import Core, MAX_RECEIVE_SIZE
 from .utils import OrderDict, QueueSystem, is_reachable, trim_msg, get_data_path
+from .encryption import EncryptRSA
 from .upnpc import UpnpClient
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
@@ -26,6 +28,7 @@ C_GET_PEERS = 'cmd/get-peers'
 C_CHECK_REACHABLE = 'cmd/check-reachable'
 C_FILE_CHECK = 'cmd/file-check'
 C_FILE_GET = 'cmd/file-get'
+C_FILE_DELETE = 'cmd/file-delete'
 # Constant type
 T_REQUEST = 'type/request'
 T_RESPONSE = 'type/response'
@@ -150,6 +153,8 @@ class PeerClient:
                 return  # already get broadcast data
             elif msg['uuid'] in self.waiting_ack:
                 return  # I'm broadcaster, get from ack
+            elif not self.broadcast_check(self, msg['data']):
+                return  # not allow broadcast condition
             self.result.put(uuid=msg['uuid'], item=(client, msg))
             self.broadcast_que.broadcast(item=(client, msg))
             deny_list.append(client)
@@ -268,6 +273,31 @@ class PeerClient:
                 threading.Thread(target=asking, name='Asking', daemon=True).start()
             # Don't send anyone at this time
 
+        elif msg['data'] == C_FILE_DELETE:
+            if 'hash' not in msg['data'] or\
+                    'sign' not in msg['data']:
+                return
+            if self.result.include(msg['uuid']):
+                return  # already get broadcast data
+            elif msg['uuid'] in self.waiting_ack:
+                return  # I'm broadcaster, get from ack
+            self.result.put(uuid=msg['uuid'], item=(client, msg))
+            deny_list.append(client)
+            allow_list = None
+            # send ACK
+            ack_list.append(client)
+            # send Response
+            temperate['type'] = T_REQUEST
+            temperate['data'] = msg['data']
+            # delete file check
+            try:
+                file_hash, sign = msg['data']['hash'], msg['data']['sign']
+                public_pem = open('public.master.pem', mode='r').read()
+                EncryptRSA.verify(public_pem, unhexlify(file_hash.encode()), sign)
+                self.remove_file(file_hash)
+            except ValueError:
+                allow_list = list()  # No sending
+
         else:
             pass
 
@@ -345,6 +375,9 @@ class PeerClient:
         if len(self.p2p.client) == 0:
             raise ConnectionError('No client connection.')
         elif cmd == C_BROADCAST:
+            clients = self.p2p.client
+            self.waiting_ack.append(uuid)
+        elif cmd == C_FILE_DELETE:
             clients = self.p2p.client
             self.waiting_ack.append(uuid)
         elif cmd == C_FILE_GET:
@@ -428,6 +461,17 @@ class PeerClient:
             os.remove(file_path)
         except:
             pass
+
+    def remove_file_by_master(self, sk, file_hash):
+        file_hash = file_hash.lower()
+        file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
+        try:
+            os.remove(file_path)
+        except:
+            pass
+        sign = EncryptRSA.sign(sk, unhexlify(file_hash.encode()))
+        self.send_command(cmd=C_FILE_DELETE, data={'hash': file_hash, 'sign': sign})
+        logging.debug("Success delete file by master.")
 
     def stabilize(self):
         time.sleep(5)
@@ -571,6 +615,10 @@ class PeerClient:
                 logging.info("Cmd timeout %s" % e)
             except Exception as e:
                 logging.debug("Stabilize %s" % e, exc_info=True)
+
+    @staticmethod
+    def broadcast_check(pc, data):
+        return True  # overwrite
 
 
 class FileReceiveError(FileExistsError): pass
