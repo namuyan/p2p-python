@@ -45,14 +45,18 @@ class EncryptRSA:
 
     @staticmethod
     def encrypt(public_pem, message):
+        key = AESCipher.create_key()
         cipher = PKCS1_OAEP.new(RSA.importKey(str2byte(public_pem)))
-        return b64encode(cipher.encrypt(message)).decode()
+        raw = cipher.encrypt(key.encode()) + b'@@@@' + AESCipher.encrypt(key, message, False)
+        return raw
 
     @staticmethod
     def decrypt(private_pem, enc, pwd=None):
-        msg = b64decode(str2byte(enc))
+        assert isinstance(enc, bytes), 'enc is bytes.'
+        enc_key, enc_msg = enc.split(b'@@@@', 1)
         cipher = PKCS1_OAEP.new(RSA.importKey(str2byte(private_pem), passphrase=pwd))
-        return cipher.decrypt(msg)
+        key = cipher.decrypt(enc_key)
+        return AESCipher.decrypt(key, enc_msg, False)
 
 
 class EncryptECDSA:
@@ -114,7 +118,7 @@ class AESCipher:
         cipher = AES.new(key, AES.MODE_CBC, iv)
         raw = AESCipher._unpad(cipher.decrypt(enc[AES.block_size:]))
         if len(raw) == 0:
-            raise Exception("not correct pwd")
+            raise ValueError("AES decryption error, not correct key.")
         elif z:
             return zlib.decompress(raw)
         else:

@@ -17,4 +17,4 @@ __all__ = [
     UpnpClient, NAME_SERVER,
     get_here_path, get_data_path, is_reachable, trim_msg, OrderDict, QueueSystem
 ]
-__version__ = '0.0.13'
+__version__ = '0.0.14'

@@ -144,7 +144,7 @@ class Core(threading.Thread):
             # Send encrypted aes-key
             aes_key = AESCipher.create_key()
             encrypted = EncryptRSA.encrypt(public_pem, aes_key.encode())
-            sock.sendall(encrypted.encode())
+            sock.sendall(encrypted)
 
             threading.Thread(
                 target=self.receive_msg, name='C:' + self.header['name'], daemon=True,
@@ -199,7 +199,7 @@ class Core(threading.Thread):
         try:
             if sock_type == SERVER_SIDE:
                 # Get AES-KEY from client
-                encrypted = sock.recv(self.buffsize).decode()
+                encrypted = sock.recv(self.buffsize)
                 if len(encrypted) == 0:
                     raise ConnectionAbortedError('received msg is zero.')
                 aes_key = EncryptRSA.decrypt(self.private_pem, encrypted).decode()
@@ -247,7 +247,7 @@ class Core(threading.Thread):
             try:
                 count = 0
                 if len(msg_prefix) == 0:
-                    sock.settimeout(1800)  # Wait for 30min
+                    sock.settimeout(3600)  # Wait for 1hour
                     first_msg = sock.recv(self.buffsize)
                     sock.settimeout(60)  # waiting for other message
                 else:
