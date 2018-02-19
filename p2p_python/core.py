@@ -12,6 +12,7 @@ import logging
 import socks
 from .encryption import AESCipher, EncryptRSA
 from .utils import get_here_path
+from .traffic import TrafficMonitor
 
 
 HEAR_PATH = get_here_path(__file__)
@@ -64,8 +65,11 @@ class Core(threading.Thread):
         self.keysize = keysize
         self.private_pem = None
         self.public_pem = None
+        self.traffic = TrafficMonitor()
+        self.traffic.start()
 
     def close_server(self):
+        self.traffic.close()
         with self.lock:
             self.header['p2p_accept'] = False
         try:
@@ -95,8 +99,11 @@ class Core(threading.Thread):
                 sock.settimeout(10)
 
                 received = sock.recv(self.buffsize)
+                self.traffic.put_traffic_down(received)
                 header = json.loads(received.decode())
-                sock.sendall(self.public_pem.encode())
+                send = self.public_pem.encode()
+                sock.sendall(send)
+                self.traffic.put_traffic_up(send)
 
                 threading.Thread(
                     target=self.receive_msg, name='S:' + header['name'], daemon=True,
@@ -136,15 +143,20 @@ class Core(threading.Thread):
             sock.connect(host_port)
 
             # Send my header first
-            sock.sendall(json.dumps(self.header).encode())
+            send = json.dumps(self.header).encode()
+            sock.sendall(send)
+            self.traffic.put_traffic_up(send)
             # get server public key
-            public_pem = sock.recv(self.buffsize).decode()
+            receive = sock.recv(self.buffsize)
+            self.traffic.put_traffic_down(receive)
+            public_pem = receive.decode()
             if len(public_pem) == 0:
                 raise ConnectionAbortedError('received msg is zero.')
             # Send encrypted aes-key
             aes_key = AESCipher.create_key()
             encrypted = EncryptRSA.encrypt(public_pem, aes_key.encode())
             sock.sendall(encrypted)
+            self.traffic.put_traffic_up(encrypted)
 
             threading.Thread(
                 target=self.receive_msg, name='C:' + self.header['name'], daemon=True,
@@ -192,7 +204,8 @@ class Core(threading.Thread):
         msg_body = AESCipher.encrypt(key=aes_key, raw=msg_body, z=cp)
         msg_len = len(msg_body).to_bytes(4, 'big')
         sock.sendall(msg_len + msg_body)
-        logging.debug("Send %sKb to \"%s\"" % (len(msg_len + msg_body)  /1000, header['name']))
+        self.traffic.put_traffic_up(msg_len + msg_body)
+        logging.debug("Send %sKb to \"%s\"" % (len(msg_len + msg_body) / 1000, header['name']))
         return client
 
     def receive_msg(self, sock, host_port, header, aes_key, sock_type):
@@ -200,15 +213,20 @@ class Core(threading.Thread):
             if sock_type == SERVER_SIDE:
                 # Get AES-KEY from client
                 encrypted = sock.recv(self.buffsize)
+                self.traffic.put_traffic_down(encrypted)
                 if len(encrypted) == 0:
                     raise ConnectionAbortedError('received msg is zero.')
                 aes_key = EncryptRSA.decrypt(self.private_pem, encrypted).decode()
                 if not AESCipher.is_aes_key(aes_key):
                     raise ConnectionAbortedError('Not correct AES key length.')
-                sock.sendall(json.dumps(self.header).encode())
+                send = json.dumps(self.header).encode()
+                sock.sendall(send)
+                self.traffic.put_traffic_up(send)
 
             elif sock_type == CLIENT_SIDE:
-                header = json.loads(sock.recv(self.buffsize).decode())
+                receive = sock.recv(self.buffsize)
+                self.traffic.put_traffic_down(receive)
+                header = json.loads(receive.decode())
 
             # Version check
             if header['network_ver'] != self.header['network_ver']:
@@ -249,6 +267,7 @@ class Core(threading.Thread):
                 if len(msg_prefix) == 0:
                     sock.settimeout(3600)  # Wait for 1hour
                     first_msg = sock.recv(self.buffsize)
+                    self.traffic.put_traffic_down(first_msg)
                     sock.settimeout(60)  # waiting for other message
                 else:
                     first_msg, msg_prefix = msg_prefix, b''
@@ -277,6 +296,7 @@ class Core(threading.Thread):
                 while True:
                     count += 1
                     new_body = sock.recv(self.buffsize)
+                    self.traffic.put_traffic_down(new_body)
                     msg_body += new_body
                     if len(new_body) == 0:
                         raise ConnectionAbortedError("3:Socket error, fall in loop.")

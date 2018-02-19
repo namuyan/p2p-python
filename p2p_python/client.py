@@ -62,6 +62,9 @@ class PeerClient:
             logging.info("Create data dir")
         # input first peer data
         self.peers = self.get_peers()
+        # recode traffic if f_debug true
+        if f_debug:
+            self.p2p.traffic.recode_dir = self.data_dir
 
     def get_peers(self):
         peer_path = os.path.join(self.tmp_dir, 'peer.dat')
@@ -508,6 +511,7 @@ class PeerClient:
         count = 0
         need_connection = 3
         while not self.f_stop:
+            count += 1
             if len(self.p2p.client) < need_connection:
                 time.sleep(2)
             elif count % 24 == 0:
@@ -515,7 +519,6 @@ class PeerClient:
             else:
                 time.sleep(5)
                 continue
-            count += 1
             try:
                 if len(self.p2p.client) == 0 and len(self.peers) > 0:
                     host_port = random.choice(list(self.peers))
@@ -528,10 +531,9 @@ class PeerClient:
                     continue
 
                 # peer list update (client)
-                already_connected = dict()
                 for client in self.p2p.client:
                     k, v = self.p2p.client2peer_format(client, self.peers)
-                    already_connected[k] = v
+                    self.peers[k] = v
 
                 # ignore list
                 p2p_port = self.p2p.header['p2p_port']
@@ -540,6 +542,7 @@ class PeerClient:
 
                 # get near info
                 client, msg = self.send_command(cmd=C_GET_PEERS)
+                logging.debug("Ask \"%s\" Peer list" % client[3]['name'])
                 k, v = self.p2p.client2peer_format(client, self.peers)
                 if k not in near_info:
                     near_info[k] = dict()
