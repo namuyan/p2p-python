@@ -273,10 +273,13 @@ class PeerClient:
                 threading.Thread(target=asking, name='Asking', daemon=True).start()
             # Don't send anyone at this time
 
-        elif msg['data'] == C_FILE_DELETE:
-            if 'hash' not in msg['data'] or\
+        elif msg['cmd'] == C_FILE_DELETE:
+            if 'raw' not in msg['data'] or\
                     'sign' not in msg['data']:
                 return
+            file_hash, time_ = bjson.loads(msg['data']['raw'])
+            if abs(time.time()-time_) > 30:
+                return  # old signature
             if self.result.include(msg['uuid']):
                 return  # already get broadcast data
             elif msg['uuid'] in self.waiting_ack:
@@ -291,10 +294,12 @@ class PeerClient:
             temperate['data'] = msg['data']
             # delete file check
             try:
-                file_hash, sign = msg['data']['hash'], msg['data']['sign']
-                public_pem = open('public.master.pem', mode='r').read()
-                EncryptRSA.verify(public_pem, unhexlify(file_hash.encode()), sign)
+                logging.debug("1:Delete request 0x%s" % file_hash)
+                work_dir = os.path.dirname(os.path.abspath(__file__))
+                public_pem = open(os.path.join(work_dir, 'pem', 'public.master.pem'), mode='r').read()
+                EncryptRSA.verify(public_pem, msg['data']['raw'], msg['data']['sign'])
                 self.remove_file(file_hash)
+                logging.info("2:Delete request accepted.")
             except ValueError:
                 allow_list = list()  # No sending
 
@@ -410,7 +415,8 @@ class PeerClient:
                     return client, msg
         else:
             self.p2p.remove_connection(client)
-            raise TimeoutError((cmd, data, uuid, client[3]['name']))
+            name = len(clients) if client is None else client[3]['name']
+            raise TimeoutError((cmd, data, uuid, name))
 
     def share_file(self, data):
         assert type(data) == bytes, "You need input raw binary data"
@@ -462,15 +468,16 @@ class PeerClient:
         except:
             pass
 
-    def remove_file_by_master(self, sk, file_hash):
+    def remove_file_by_master(self, sk, file_hash, pwd=None):
         file_hash = file_hash.lower()
         file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
         try:
             os.remove(file_path)
         except:
             pass
-        sign = EncryptRSA.sign(sk, unhexlify(file_hash.encode()))
-        self.send_command(cmd=C_FILE_DELETE, data={'hash': file_hash, 'sign': sign})
+        raw = bjson.dumps((file_hash, time.time()), False)
+        sign = EncryptRSA.sign(sk, raw, pwd=pwd)
+        self.send_command(cmd=C_FILE_DELETE, data={'raw': raw, 'sign': sign})
         logging.debug("Success delete file by master.")
 
     def stabilize(self):
