@@ -275,7 +275,8 @@ class PeerClient:
 
         elif msg['cmd'] == C_FILE_DELETE:
             if 'raw' not in msg['data'] or\
-                    'sign' not in msg['data']:
+                    'sign' not in msg['data'] or\
+                    'pem' not in msg['data']:
                 return
             file_hash, time_ = bjson.loads(msg['data']['raw'])
             if abs(time.time()-time_) > 30:
@@ -296,10 +297,10 @@ class PeerClient:
             try:
                 logging.debug("1:Delete request 0x%s" % file_hash)
                 work_dir = os.path.dirname(os.path.abspath(__file__))
-                public_pem = open(os.path.join(work_dir, 'pem', 'public.master.pem'), mode='r').read()
+                public_pem = open(os.path.join(work_dir, 'pem', msg['data']['pem']), mode='r').read()
                 EncryptRSA.verify(public_pem, msg['data']['raw'], msg['data']['sign'])
-                self.remove_file(file_hash)
-                logging.info("2:Delete request accepted.")
+                if self.remove_file(file_hash):
+                    logging.info("2:Delete request accepted.")
             except ValueError:
                 allow_list = list()  # No sending
 
@@ -465,10 +466,11 @@ class PeerClient:
         file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
         try:
             os.remove(file_path)
+            return True
         except:
-            pass
+            return False
 
-    def remove_file_by_master(self, sk, file_hash, pwd=None):
+    def remove_file_by_master(self, sk, file_hash, pem='public.master.pem', pwd=None):
         file_hash = file_hash.lower()
         file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
         try:
@@ -477,7 +479,7 @@ class PeerClient:
             pass
         raw = bjson.dumps((file_hash, time.time()), False)
         sign = EncryptRSA.sign(sk, raw, pwd=pwd)
-        self.send_command(cmd=C_FILE_DELETE, data={'raw': raw, 'sign': sign})
+        self.send_command(cmd=C_FILE_DELETE, data={'raw': raw, 'sign': sign, 'pem': pem})
         logging.debug("Success delete file by master.")
 
     def stabilize(self):
