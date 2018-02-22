@@ -11,7 +11,6 @@ import random
 import copy
 from hashlib import sha256
 from tempfile import gettempdir
-from binascii import unhexlify
 from .core import Core, MAX_RECEIVE_SIZE
 from .utils import OrderDict, QueueSystem, is_reachable, trim_msg, get_data_path
 from .encryption import EncryptRSA
@@ -49,13 +48,13 @@ class PeerClient:
         self.p2p = Core(host=host, port=port, net_ver=net_ver, listen=listen)
         self.f_debug = f_debug
         # check existence tmp dir
-        tmp_dir_name = 'p2p_python.' + str(net_ver) + '.' + str(port) + ('' if f_debug else '.test')
+        tmp_dir_name = 'p2p_python.' + str(net_ver) + '.' + str(port) + ('.test' if f_debug else '')
         self.tmp_dir = os.path.join(gettempdir(), tmp_dir_name)
         if not os.path.isdir(self.tmp_dir):
             os.makedirs(self.tmp_dir)
             logging.info("Create tmp dir.")
         # check existence data dir
-        data_dir_name = 'p2p_python_' + str(net_ver) + '_' + str(port) + ('' if f_debug else '_test')
+        data_dir_name = 'p2p_python_' + str(net_ver) + '_' + str(port) + ('.test' if f_debug else '')
         self.data_dir = os.path.join(get_data_path(), data_dir_name)
         if not os.path.isdir(self.data_dir):
             os.makedirs(self.data_dir)

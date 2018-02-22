@@ -31,7 +31,7 @@ setup(
     description='Simple peer2peer library.',
     long_description=readme,
     packages=find_packages(),
-    package_data={'': ['*.txt'], 'pem': ['*.pem']},
+    include_package_data=True,
     license="MIT",
     install_requires=['pycryptodomex', 'xmltodict', 'requests', 'bjson', 'pysocks'],
     classifiers=[

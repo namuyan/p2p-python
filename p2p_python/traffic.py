@@ -9,7 +9,7 @@ import os.path
 import logging
 
 
-class TrafficMonitor(threading.Thread):
+class Traffic(threading.Thread):
     f_stop = False
     f_finish = False
 
@@ -39,11 +39,15 @@ class TrafficMonitor(threading.Thread):
             if self.recode_dir is None:
                 continue
             date = time.strftime('%y-%m-%d')
+            recode_path = os.path.join(self.recode_dir, 'traffic.%s.csv' % date)
             try:
-                with open(os.path.join(self.recode_dir, 'traffic.%s.csv' % date), mode='a') as f:
+                f_first = os.path.exists(recode_path)
+                with open(recode_path, mode='a') as f:
+                    if not f_first:
+                        f.write("unix time,date,up (kb),down (kb)\n")
                     f.write("{},{},{},{}\n".format(
                         time_,
-                        time.strftime('%H時%M分', time_),
+                        time.strftime('%Hh%Mm', time.gmtime(time_)),
                         round(up / 1000, 3),
                         round(down / 1000, 3)
                     ))

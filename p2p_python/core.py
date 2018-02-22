@@ -12,7 +12,7 @@ import logging
 import socks
 from .encryption import AESCipher, EncryptRSA
 from .utils import get_here_path
-from .traffic import TrafficMonitor
+from .traffic import Traffic
 
 
 HEAR_PATH = get_here_path(__file__)
@@ -65,7 +65,7 @@ class Core(threading.Thread):
         self.keysize = keysize
         self.private_pem = None
         self.public_pem = None
-        self.traffic = TrafficMonitor()
+        self.traffic = Traffic()
         self.traffic.start()
 
     def close_server(self):
