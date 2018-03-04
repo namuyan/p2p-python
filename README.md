@@ -26,27 +26,6 @@ pc.start(f_server=True, f_stabilize=True)
 Please look test dir.   
 Simple chat program [simple_chat.py](test/simple_chat.py).
 
-Uer test1
-```commandline
-python3 test/simple_chat.py
-name >> test1
-Create port 2001
-Join "test2"
-[01-01-01-01][test2      ] hello world
->> 
-```
-
-Another user test2
-```commandline
-python3 test/simple_chat.py
-name >> test2
->> /join 2001
-Create port 2002
-Join "test2"
->> hello world
-[01-01-01-01][test2      ] hello world
->> 
-```
 
 ## Author
 [@namuyan_mine](http://twitter.com/namuyan_mine/)
