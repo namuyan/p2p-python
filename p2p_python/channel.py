@@ -386,11 +386,12 @@ class Channel(threading.Thread):
             try:
                 # ping-pong check
                 # detect left user
-                if bool(f_election) is False and min(ping_pong.values()) < time.time() - self.ping_pong_span * 1.5:
+                ping_min_time = min(ping_pong.values())
+                if bool(f_election) is False and ping_min_time < time.time() - self.ping_pong_span * 1.3:
                     # C_LEAVEせずに離れたユーザーがいる
                     left_user = list()
                     for pk in ping_pong:
-                        if ping_pong[pk] < time.time() - self.ping_pong_span * 1.5:
+                        if ping_pong[pk] < time.time() - self.ping_pong_span * 1.3:
                             if self.members.is_master(pk):
                                 logging.info("Detect master left, run for master!")
                                 self.cmd_send_aes(cmd=C_RUN_FOR_MASTER, data=None)
@@ -405,13 +406,15 @@ class Channel(threading.Thread):
                             continue
                         logging.info("Detect left user. %d" % self.members.get(pk))
                         self.members.remove(pk)
+                elif ping_min_time < time.time() - self.ping_pong_span * 1.1:
+                    logging.info("Ping warning, {}S".format(round(time.time()-ping_min_time), 1))
 
                 # ping-pong前に入ったか、入れ替わりでC_LEAVEせず消えたか
                 for pk in set(self.members.data) - set(ping_pong):
                     logging.debug("No ping user %d ,add time." % self.members.get(pk))
                     ping_pong[pk] = time.time()
                 for pk in set(ping_pong) - set(self.members.data):
-                    logging.debug("deleted user %d." % self.members.get(pk))
+                    logging.debug("deleted user")
                     del ping_pong[pk]
 
             except TimeoutError:

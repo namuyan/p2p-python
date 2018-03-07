@@ -18,4 +18,4 @@ __all__ = [
     UpnpClient, NAME_SERVER,
     get_here_path, get_data_path, is_reachable, trim_msg, StackDict, QueueSystem
 ]
-__version__ = '0.0.17'
+__version__ = '0.0.18'

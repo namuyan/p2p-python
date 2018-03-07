@@ -33,7 +33,9 @@ class PeerClient:
 
     def __init__(self, port, net_ver, listen=15, f_debug=False):
         self.broadcast_que = QueueSystem()
+        self.direct_cmd_que = QueueSystem()
         self.result = StackDict()
+        self.direct_cmd_result = StackDict()
         self.waiting_ack = list()
         self.file_client_path = StackDict()
         host = '127.0.0.1' if f_debug else ''
@@ -298,6 +300,20 @@ class PeerClient:
             except ValueError:
                 allow_list = list()  # No sending
 
+        elif msg['cmd'] == C_DIRECT_CMD:
+            def direct_cmd():
+                c = 200
+                while c > 0:
+                    time.sleep(0.02)
+                    if self.direct_cmd_result.include(msg['uuid']):
+                        temperate['data'] = self.direct_cmd_result.get(msg['uuid'])
+                        break
+                else:
+                    temperate['data'] = None
+                temperate['time'] = time.time()
+                self._send_msg(msg=temperate, allow=[client])
+            self.direct_cmd_que.broadcast(item=(msg['uuid'], msg['data']))
+            threading.Thread(target=direct_cmd, name='DirectCmd', daemon=True).start()
         else:
             pass
 
@@ -312,6 +328,8 @@ class PeerClient:
         # garbage correction
         if len(self.result.uuid2data) > self.p2p.listen * 100:
             self.result.del_old()
+        if len(self.direct_cmd_result.uuid2data) > self.p2p.listen * 100:
+            self.direct_cmd_result.del_old()
         if len(self.file_client_path.uuid2data) > self.p2p.listen * 100:
             self.file_client_path.del_old()
         if len(self.waiting_ack) > 50:
