@@ -1,0 +1,5 @@
+pycryptodomex
+xmltodict
+requests
+bjson
+pysocks

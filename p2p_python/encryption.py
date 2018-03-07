@@ -19,7 +19,7 @@ from Cryptodome.Signature import DSS
 from Cryptodome.Cipher import AES
 from base64 import b64encode, b64decode
 import zlib
-import os
+from os import urandom
 
 
 class EncryptRSA:
@@ -90,12 +90,12 @@ class EncryptECDSA:
 class AESCipher:
     @staticmethod
     def create_key():
-        return b64encode(os.urandom(32)).decode()
+        return b64encode(urandom(AES.block_size)).decode()
 
     @staticmethod
     def is_aes_key(key):
         try:
-            return len(b64decode(key.encode())) == 32
+            return len(b64decode(key.encode())) == AES.block_size
         except:
             return False
 
@@ -126,8 +126,8 @@ class AESCipher:
 
     @staticmethod
     def _pad(s):
-        pad = 32 - len(s) % 32
-        add = 32 - len(s) % 32
+        pad = AES.block_size - len(s) % AES.block_size
+        add = AES.block_size - len(s) % AES.block_size
         return s + add * pad.to_bytes(1, 'big')
 
     @staticmethod

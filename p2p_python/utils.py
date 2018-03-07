@@ -40,7 +40,7 @@ def trim_msg(item, num):
     return str_item[:num] + ('...' if len(str_item) > num else '')
 
 
-class OrderDict:
+class StackDict:
     def __init__(self):
         self.uuid2data = dict()
         self.lock = threading.Lock()

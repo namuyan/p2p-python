@@ -12,8 +12,9 @@ import time
 import logging
 import copy
 from .encryption import EncryptRSA, AESCipher
-from .utils import OrderDict, QueueSystem
+from .utils import StackDict, QueueSystem
 from .client import C_BROADCAST
+from .channel_cmd import *
 
 """
 1, 新規受け付けはMasterNodeのみ
@@ -25,17 +26,6 @@ from .client import C_BROADCAST
 T_RSA = 'type/rsa'
 T_AES = 'type/aes'
 MAX_INT = 256 ** 4 - 1
-
-# Cmd
-C_JOIN = 'ch/join'
-C_LEAVE = 'ch/leave'
-C_ADD_NEW_MEMBER = 'ch/add-new-member'
-C_ADD_NEW_KEY = 'ch/add-new-key'
-C_RUN_FOR_MASTER = 'ch/run-for-master'  # Masterがいない為、立候補する
-C_VOTE_CANDIDATE = 'ch/reject-candidate'  # 立候補者をランクが低い為拒否する
-C_MESSAGE = 'ch/message'
-C_PING_PONG = 'ch/ping-pong'
-C_ACTION_RESULT = 'ch-cmd/action-result'
 
 
 class MemberList:
@@ -126,7 +116,7 @@ class Channel(threading.Thread):
         # 変数
         self.members = MemberList()
         self.aes_key = collections.deque(maxlen=5)
-        self.result = OrderDict()
+        self.result = StackDict()
         self.message = QueueSystem()
 
     def cmd_send_rsa(self, cmd, data, pk, uuid=None, wait=-1):

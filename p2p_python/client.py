@@ -12,26 +12,18 @@ import copy
 from hashlib import sha256
 from tempfile import gettempdir
 from .core import Core, MAX_RECEIVE_SIZE
-from .utils import OrderDict, QueueSystem, is_reachable, trim_msg, get_data_path
+from .utils import StackDict, QueueSystem, is_reachable, trim_msg, get_data_path
 from .encryption import EncryptRSA
 from .upnpc import UpnpClient
+from .client_cmd import *
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
 GLOBAL_IP = UpnpClient.get_global_ip()
 
-# Constant cmd
-C_PING_PONG = 'cmd/ping-pong'
-C_BROADCAST = 'cmd/broadcast'
-C_GET_PEER_INFO = 'cmd/get-peer-info'
-C_GET_PEERS = 'cmd/get-peers'
-C_CHECK_REACHABLE = 'cmd/check-reachable'
-C_FILE_CHECK = 'cmd/file-check'
-C_FILE_GET = 'cmd/file-get'
-C_FILE_DELETE = 'cmd/file-delete'
 # Constant type
-T_REQUEST = 'type/request'
-T_RESPONSE = 'type/response'
-T_ACK = 'type/ack'
+T_REQUEST = 'type/client/request'
+T_RESPONSE = 'type/client/response'
+T_ACK = 'type/client/ack'
 
 
 class PeerClient:
@@ -41,9 +33,9 @@ class PeerClient:
 
     def __init__(self, port, net_ver, listen=15, f_debug=False):
         self.broadcast_que = QueueSystem()
-        self.result = OrderDict()
+        self.result = StackDict()
         self.waiting_ack = list()
-        self.file_client_path = OrderDict()
+        self.file_client_path = StackDict()
         host = '127.0.0.1' if f_debug else ''
         self.p2p = Core(host=host, port=port, net_ver=net_ver, listen=listen)
         self.f_debug = f_debug
@@ -629,7 +621,7 @@ class PeerClient:
 
     @staticmethod
     def broadcast_check(pc, data):
-        return True  # overwrite
+        return False  # overwrite
 
 
 class FileReceiveError(FileExistsError): pass
