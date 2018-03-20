@@ -2,20 +2,21 @@
 # -*- coding: utf-8 -*-
 
 
-import time
-import threading
+import copy
 import logging
-import bjson
 import os.path
 import random
-import copy
+import threading
+import time
 from hashlib import sha256
 from tempfile import gettempdir
+
+import bjson
+
+from p2p_python.tool.upnpc import UpnpClient
 from .core import Core, MAX_RECEIVE_SIZE
-from .utils import StackDict, QueueSystem, is_reachable, trim_msg, get_data_path
 from .encryption import EncryptRSA
-from .upnpc import UpnpClient
-from .client_cmd import *
+from .utils import StackDict, QueueSystem, is_reachable, trim_msg, get_data_path
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
 GLOBAL_IP = UpnpClient.get_global_ip()
@@ -24,6 +25,18 @@ GLOBAL_IP = UpnpClient.get_global_ip()
 T_REQUEST = 'type/client/request'
 T_RESPONSE = 'type/client/response'
 T_ACK = 'type/client/ack'
+
+
+class ClientCmd:
+    PING_PONG = 'cmd/client/ping-pong'  # ping-pong
+    BROADCAST = 'cmd/client/broadcast'  # 全ノードに伝播
+    GET_PEER_INFO = 'cmd/client/get-peer-info'  # 隣接ノードの情報を取得
+    GET_PEERS = 'cmd/client/get-peers'  # ピアリストを取得
+    CHECK_REACHABLE = 'cmd/client/check-reachable'  # 外部からServerに到達できるかチェック
+    FILE_CHECK = 'cmd/client/file-check'  # Fileが存在するかHashをチェック
+    FILE_GET = 'cmd/client/file-get'  # Fileの転送を依頼
+    FILE_DELETE = 'cmd/client/file-delete'  # 全ノードからFileを消去
+    DIRECT_CMD = 'cmd/client/direct-cmd'  # 隣接ノードに直接CMDを打つ
 
 
 class PeerClient:
@@ -138,13 +151,13 @@ class PeerClient:
         deny_list = list()
         ack_list = list()
 
-        if msg['cmd'] == C_PING_PONG:
+        if msg['cmd'] == ClientCmd.PING_PONG:
             temperate['data'] = {
                 'ping': msg['data'],
                 'pong': time.time()}
             allow_list.append(client)
 
-        elif msg['cmd'] == C_BROADCAST:
+        elif msg['cmd'] == ClientCmd.BROADCAST:
             if self.result.include(msg['uuid']):
                 return  # already get broadcast data
             elif msg['uuid'] in self.waiting_ack:
@@ -161,11 +174,11 @@ class PeerClient:
             temperate['type'] = T_REQUEST
             temperate['data'] = msg['data']
 
-        elif msg['cmd'] == C_GET_PEER_INFO:
+        elif msg['cmd'] == ClientCmd.GET_PEER_INFO:
             temperate['data'] = self.p2p.header
             allow_list.append(client)
 
-        elif msg['cmd'] == C_GET_PEERS:
+        elif msg['cmd'] == ClientCmd.GET_PEERS:
             near = {(host_port[0], header['p2p_port']): header
                     for n, s, host_port, header, a, s_t in self.p2p.client}
             peer = {host_port: self.peers[host_port]['header'] for host_port in self.peers}
@@ -173,13 +186,13 @@ class PeerClient:
             # {"near": [[(host, port), header], ..],"peer": ...}
             allow_list.append(client)
 
-        elif msg['cmd'] == C_CHECK_REACHABLE:
+        elif msg['cmd'] == ClientCmd.CHECK_REACHABLE:
             f_by_user_req = 'port' in msg['data'] and msg['data']['port']
             check_port = msg['data']['port'] if f_by_user_req else client[3]['p2p_port']
             temperate['data'] = is_reachable(host=client[2][0], port=check_port)
             allow_list.append(client)
 
-        elif msg['cmd'] == C_FILE_CHECK:
+        elif msg['cmd'] == ClientCmd.FILE_CHECK:
             file_hash = msg['data']['hash']
             asked_id = msg['data']['uuid']
             file_path = os.path.join(self.tmp_dir, 'file.' + file_hash + '.dat')
@@ -188,7 +201,7 @@ class PeerClient:
             temperate['data'] = {'have': f_existence, 'asked': f_already_asked}
             allow_list.append(client)
 
-        elif msg['cmd'] == C_FILE_GET:
+        elif msg['cmd'] == ClientCmd.FILE_GET:
             def asking():
                 # ファイル要求元のNodeに近いNode群を無視する
                 nears = [self.p2p.peer_format2client(host_port) for host_port in already_asked]
@@ -207,7 +220,7 @@ class PeerClient:
                 for ask_client in client_:
                     try:
                         dummy, data = self.send_command(
-                            cmd=C_FILE_CHECK, client=ask_client, data={'hash': file_hash, 'uuid': msg['uuid']})
+                            cmd=ClientCmd.FILE_CHECK, client=ask_client, data={'hash': file_hash, 'uuid': msg['uuid']})
                     except Exception as e:
                         logging.debug("Check file existence one by one, %s", e)
                         continue
@@ -234,7 +247,7 @@ class PeerClient:
                     my_peers = [self.p2p.client2peer_format(c, dict())[0] for c in self.p2p.client]
                     data = {'hash': file_hash, 'asked': my_peers}
                     self.file_client_path.put(uuid=msg['uuid'], item=(client, hopeful))
-                    from_client, data = self.send_command(cmd=C_FILE_GET, data=data, client=hopeful, wait=20)
+                    from_client, data = self.send_command(cmd=ClientCmd.FILE_GET, data=data, client=hopeful, wait=20)
                     temperate['data'] = data
                     if data is None:
                         logging.debug("Get null from \"%s\" 0x%s" % (from_client[3]['name'], file_hash))
@@ -269,7 +282,7 @@ class PeerClient:
                 threading.Thread(target=asking, name='Asking', daemon=True).start()
             # Don't send anyone at this time
 
-        elif msg['cmd'] == C_FILE_DELETE:
+        elif msg['cmd'] == ClientCmd.FILE_DELETE:
             if 'raw' not in msg['data'] or\
                     'sign' not in msg['data'] or\
                     'pem' not in msg['data']:
@@ -300,7 +313,7 @@ class PeerClient:
             except ValueError:
                 allow_list = list()  # No sending
 
-        elif msg['cmd'] == C_DIRECT_CMD:
+        elif msg['cmd'] == ClientCmd.DIRECT_CMD:
             def direct_cmd():
                 c = 200
                 while c > 0:
@@ -341,7 +354,7 @@ class PeerClient:
         uuid = msg['uuid']
         item = msg['data']
         cmd = msg['cmd']
-        if cmd == C_FILE_GET:
+        if cmd == ClientCmd.FILE_GET:
             # origin check
             if self.file_client_path.include(uuid):
                 ship_from, ship_to = self.file_client_path.get(uuid)
@@ -392,13 +405,13 @@ class PeerClient:
             'uuid': uuid}
         if len(self.p2p.client) == 0:
             raise ConnectionError('No client connection.')
-        elif cmd == C_BROADCAST:
+        elif cmd == ClientCmd.BROADCAST:
             clients = self.p2p.client
             self.waiting_ack.append(uuid)
-        elif cmd == C_FILE_DELETE:
+        elif cmd == ClientCmd.FILE_DELETE:
             clients = self.p2p.client
             self.waiting_ack.append(uuid)
-        elif cmd == C_FILE_GET:
+        elif cmd == ClientCmd.FILE_GET:
             self.file_client_path.put(uuid=uuid, item=('I\'m Sender.', client))
             assert client is not None, 'You need select client by manually.'
             assert client in self.p2p.client, 'Unknown client.'
@@ -420,7 +433,7 @@ class PeerClient:
             time.sleep(span)
             if self.result.include(uuid=uuid):
                 client, msg = self.result.get(uuid)
-                if cmd == C_BROADCAST:
+                if cmd == ClientCmd.BROADCAST:
                     self.broadcast_que.broadcast(item=(client, temperate))
                     return client, data
                 else:
@@ -453,7 +466,7 @@ class PeerClient:
             client_ = copy.copy(self.p2p.client)
             random.shuffle(client_)
             for client in client_:
-                dummy, msg = self.send_command(cmd=C_FILE_CHECK, data={'hash': file_hash, 'uuid': 0}, client=client)
+                dummy, msg = self.send_command(cmd=ClientCmd.FILE_CHECK, data={'hash': file_hash, 'uuid': 0}, client=client)
                 if msg['have']:
                     hopeful = client
                     break
@@ -463,7 +476,7 @@ class PeerClient:
             nears = [self.p2p.client2peer_format(c, dict())[0] for c in self.p2p.client]
             logging.debug("Ask file send to \"%s\"" % hopeful[3]['name'])
             dummy, raw = self.send_command(
-                cmd=C_FILE_GET, data={'hash': file_hash, 'asked': nears}, client=hopeful)
+                cmd=ClientCmd.FILE_GET, data={'hash': file_hash, 'asked': nears}, client=hopeful)
             if raw is None:
                 raise FileReceiveError('Peers send me Null data. Please retry.')
             if sha256(raw).hexdigest() == file_hash:
@@ -491,7 +504,7 @@ class PeerClient:
             pass
         raw = bjson.dumps((file_hash, time.time()), False)
         sign = EncryptRSA.sign(sk, raw, pwd=pwd)
-        self.send_command(cmd=C_FILE_DELETE, data={'raw': raw, 'sign': sign, 'pem': pem})
+        self.send_command(cmd=ClientCmd.FILE_DELETE, data={'raw': raw, 'sign': sign, 'pem': pem})
         logging.debug("Success delete file by master.")
 
     def stabilize(self):
@@ -550,7 +563,7 @@ class PeerClient:
                 ignore_node += [(client[2][0], client[3]['p2p_port']) for client in self.p2p.client]
 
                 # get near info
-                client, msg = self.send_command(cmd=C_GET_PEERS)
+                client, msg = self.send_command(cmd=ClientCmd.GET_PEERS)
                 logging.debug("Ask \"%s\" Peer list" % client[3]['name'])
                 k, v = self.p2p.client2peer_format(client, self.peers)
                 if k not in near_info:
@@ -601,7 +614,7 @@ class PeerClient:
                     host_port, score = random.choice(sorted_client[len(sorted_client) // 2:])
                     client = self.p2p.peer_format2client(k=host_port)
                     # Check number of peers
-                    client, msg = self.send_command(cmd=C_GET_PEERS, client=client)
+                    client, msg = self.send_command(cmd=ClientCmd.GET_PEERS, client=client)
                     if len(msg['near']) >= need_connection:
                         self.p2p.remove_connection(client)
                         logging.debug("Remove connection %s:%d=%d" % (host_port[0], host_port[1], score))

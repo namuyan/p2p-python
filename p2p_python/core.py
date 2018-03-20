@@ -1,19 +1,19 @@
 #!/user/env python3
 # -*- coding: utf-8 -*-
 
+import json
+import logging
+import os
+import queue
+import random
 import socket
 import time
-import json
-import random
-import threading
-import queue
-import os
-import logging
+from threading import Thread, Lock
 import socks
+
+from .tool.traffic import Traffic
 from .encryption import AESCipher, EncryptRSA
 from .utils import get_here_path
-from .traffic import Traffic
-
 
 HEAR_PATH = get_here_path(__file__)
 CLIENT_VER = next((line.split('=')[1].strip().replace("'", '')
@@ -28,10 +28,10 @@ CLIENT_SIDE = 'Client'
 F_DEBUG = False
 
 
-class Core(threading.Thread):
+class Core(Thread):
     number = 0
     server_sock = None
-    f_tor = False  # Use tor mode, Only allowed client mode
+    f_tor = False  # Use tor mode, Don't accept from outside.
 
     def __init__(self, port, net_ver, host='', cp=True, name=None, listen=10, buffsize=2048, keysize=3072):
         """
@@ -47,7 +47,7 @@ class Core(threading.Thread):
         super().__init__(name='P2P_Core', daemon=True)
         self.client = list()
         self.stream_que = queue.LifoQueue(maxsize=100)
-        self.lock = threading.Lock()
+        self.lock = Lock()
         self.host = host
         self.port = port
         self.net_ver = net_ver
@@ -105,10 +105,8 @@ class Core(threading.Thread):
                 sock.sendall(send)
                 self.traffic.put_traffic_up(send)
 
-                threading.Thread(
-                    target=self.receive_msg, name='S:' + header['name'], daemon=True,
-                    args=(sock, host_port, header, None, SERVER_SIDE),
-                ).start()
+                Thread(target=self.receive_msg, name='S:' + header['name'], daemon=True,
+                       args=(sock, host_port, header, None, SERVER_SIDE)).start()
 
             except json.decoder.JSONDecodeError:
                 try: sock.close()
@@ -158,10 +156,8 @@ class Core(threading.Thread):
             sock.sendall(encrypted)
             self.traffic.put_traffic_up(encrypted)
 
-            threading.Thread(
-                target=self.receive_msg, name='C:' + self.header['name'], daemon=True,
-                args=(sock, host_port, None, aes_key, CLIENT_SIDE)
-            ).start()
+            Thread(target=self.receive_msg, name='C:' + self.header['name'], daemon=True,
+                   args=(sock, host_port, None, aes_key, CLIENT_SIDE)).start()
 
             c = 20
             while len(self.client) == 0 and c > 0:

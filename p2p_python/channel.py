@@ -13,8 +13,7 @@ import logging
 import copy
 from .encryption import EncryptRSA, AESCipher
 from .utils import StackDict, QueueSystem
-from .client import C_BROADCAST
-from .channel_cmd import *
+from .client import ClientCmd
 
 """
 1, 新規受け付けはMasterNodeのみ
@@ -26,6 +25,19 @@ from .channel_cmd import *
 T_RSA = 'type/rsa'
 T_AES = 'type/aes'
 MAX_INT = 256 ** 4 - 1
+
+
+class ChannelCmd:
+    """ channel command """
+    PING_PONG = 'cmd/ch/ping-pong'  # ping-pongを返す
+    JOIN = 'cmd/ch/join'  # channelにJOINする
+    LEAVE = 'cmd/ch/leave'  # channelからLEAVEする
+    ADD_NEW_MEMBER = 'cmd/ch/add-new-member'  # channelにMemberを加える
+    ADD_NEW_KEY = 'cmd/ch/add-new-key'  # channelの共通鍵を加える
+    RUN_FOR_MASTER = 'cmd/ch/run-for-master'  # Masterがいない為、立候補する
+    VOTE_CANDIDATE = 'cmd/ch/reject-candidate'  # 立候補者をランクが低い為拒否する
+    MESSAGE = 'cmd/ch/message'  # channelにMessageを送る
+    ACTION_RESULT = 'cmd/ch/action-result'  # cmdの結果を返す
 
 
 class MemberList:
@@ -130,7 +142,7 @@ class Channel(threading.Thread):
             'type': T_RSA,
             'data': EncryptRSA.encrypt(pk, send_data),
             'ch': self.ch}
-        self.pc.send_command(cmd=C_BROADCAST, data=template)
+        self.pc.send_command(cmd=ClientCmd.BROADCAST, data=template)
         if wait <= 0:
             return uuid
         span = 0.005
@@ -159,7 +171,7 @@ class Channel(threading.Thread):
             'type': T_AES,
             'data': AESCipher.encrypt(aes_key, send_data, False),
             'ch': self.ch}
-        self.pc.send_command(cmd=C_BROADCAST, data=template)
+        self.pc.send_command(cmd=ClientCmd.BROADCAST, data=template)
         if wait <= 0:
             return uuid
         span = 0.005
@@ -231,16 +243,16 @@ class Channel(threading.Thread):
 
                 if self.result.include(uuid):
                     continue
-                elif cmd == C_ACTION_RESULT:
+                elif cmd == ChannelCmd.ACTION_RESULT:
                     self.result.put(uuid, item=(signer, data, key_index))
-                elif cmd == C_MESSAGE:
+                elif cmd == ChannelCmd.MESSAGE:
                     f_private = (f_type == T_RSA)
                     self.message.broadcast((f_private, signer, data))
-                elif cmd == C_RUN_FOR_MASTER and f_type == T_AES:
+                elif cmd == ChannelCmd.RUN_FOR_MASTER and f_type == T_AES:
                     election_que.put((cmd, data, signer, uuid))
-                elif cmd == C_VOTE_CANDIDATE and f_type == T_AES:
+                elif cmd == ChannelCmd.VOTE_CANDIDATE and f_type == T_AES:
                     election_que.put((cmd, data, signer, uuid))
-                elif cmd == C_PING_PONG and f_type == T_AES:
+                elif cmd == ChannelCmd.PING_PONG and f_type == T_AES:
                     election_que.put((cmd, data, signer, uuid))
                 else:
                     process_que.put((cmd, data, signer, uuid, f_type, key_index))
@@ -267,33 +279,33 @@ class Channel(threading.Thread):
             try:
                 cmd, data, signer, uuid, f_type, key_index = process_que.get(timeout=5)
 
-                if cmd == C_JOIN and f_type == T_RSA:
+                if cmd == ChannelCmd.JOIN and f_type == T_RSA:
                     # 新規メンバー追加
                     if self.join_condition_check(ch=self, data=data):
                         new_aes = AESCipher.create_key()
                         new_signer = signer
                         new_rank = max(self.members.data.values()) + 1
                         self.members.put(user=new_signer, item=new_rank)
-                        self.cmd_send_rsa(C_ACTION_RESULT, (True, new_aes, self.members.data), signer, uuid=uuid)
-                        self.cmd_send_aes(C_ADD_NEW_MEMBER, (new_aes, new_signer, new_rank))
+                        self.cmd_send_rsa(ChannelCmd.ACTION_RESULT, (True, new_aes, self.members.data), signer, uuid=uuid)
+                        self.cmd_send_aes(ChannelCmd.ADD_NEW_MEMBER, (new_aes, new_signer, new_rank))
                         self.aes_key.append(new_aes)
                         logging.info("New user rank=%d" % new_rank)
                     else:
                         # 参加を拒否する場合
-                        self.cmd_send_rsa(cmd=C_ACTION_RESULT, data=(False, None, None), pk=signer, uuid=uuid)
+                        self.cmd_send_rsa(cmd=ChannelCmd.ACTION_RESULT, data=(False, None, None), pk=signer, uuid=uuid)
                         logging.debug("Reject user.")
 
-                elif cmd == C_LEAVE and f_type == T_AES:
+                elif cmd == ChannelCmd.LEAVE and f_type == T_AES:
                     self.members.remove(signer)
                     if self.members.is_master(self.pk):
                         logging.info("Work as master.")
 
-                elif cmd == C_ADD_NEW_KEY and f_type == T_RSA:
+                elif cmd == ChannelCmd.ADD_NEW_KEY and f_type == T_RSA:
                     if not self.members.is_master(signer):
                         continue
                     self.aes_key.append(data)
 
-                elif cmd == C_ADD_NEW_MEMBER and f_type == T_AES:
+                elif cmd == ChannelCmd.ADD_NEW_MEMBER and f_type == T_AES:
                     if not self.members.is_master(signer):
                         continue  # not a master request!
                     new_aes, new_signer, rank = data
@@ -319,7 +331,7 @@ class Channel(threading.Thread):
         while not self.f_stop:
             time.sleep(self.ping_pong_span * (random.random() * 0.1 + 0.95))
             logging.debug("Send ping as master.")
-            self.cmd_send_aes(cmd=C_PING_PONG, data=None)
+            self.cmd_send_aes(cmd=ChannelCmd.PING_PONG, data=None)
 
     def _election(self, election_que):
         # 投票管理
@@ -344,7 +356,7 @@ class Channel(threading.Thread):
                 for pk in self.members.data:
                     if pk == self.pk:
                         continue
-                    self.cmd_send_rsa(cmd=C_ADD_NEW_KEY, data=new_aes, pk=pk)
+                    self.cmd_send_rsa(cmd=ChannelCmd.ADD_NEW_KEY, data=new_aes, pk=pk)
                 self.aes_key.append(new_aes)
             else:
                 raise ChannelError('Unknown status')
@@ -361,7 +373,7 @@ class Channel(threading.Thread):
                 if not self.members.include(signer):
                     continue
 
-                if cmd == C_RUN_FOR_MASTER:
+                if cmd == ChannelCmd.RUN_FOR_MASTER:
                     logging.debug("candidate master by %d" % self.members.get(signer))
                     run_for_span = 15
                     if not bool(f_election):
@@ -370,12 +382,12 @@ class Channel(threading.Thread):
                         t.setName('Candidate')
                         t.start()
                         if self.pk not in ping_pong or ping_pong[self.pk] - 1 < time.time() - run_for_span:
-                            self.cmd_send_aes(cmd=C_PING_PONG, data=None)
+                            self.cmd_send_aes(cmd=ChannelCmd.PING_PONG, data=None)
 
-                elif cmd == C_PING_PONG:
+                elif cmd == ChannelCmd.PING_PONG:
                     ping_pong[signer] = time.time()
                     if self.members.is_master(signer) and not self.f_master:
-                        self.cmd_send_aes(cmd=C_PING_PONG, data=None)
+                        self.cmd_send_aes(cmd=ChannelCmd.PING_PONG, data=None)
 
             except queue.Empty:
                 pass
@@ -394,7 +406,7 @@ class Channel(threading.Thread):
                         if ping_pong[pk] < time.time() - self.ping_pong_span * 1.3:
                             if self.members.is_master(pk):
                                 logging.info("Detect master left, run for master!")
-                                self.cmd_send_aes(cmd=C_RUN_FOR_MASTER, data=None)
+                                self.cmd_send_aes(cmd=ChannelCmd.RUN_FOR_MASTER, data=None)
                                 self.members.remove(pk)
                                 left_user.clear()
                                 break
@@ -428,7 +440,7 @@ class Channel(threading.Thread):
 
     def close(self):
         self.f_stop = True
-        self.cmd_send_aes(cmd=C_LEAVE, data='Goodbye.')
+        self.cmd_send_aes(cmd=ChannelCmd.LEAVE, data='Goodbye.')
         self.members.data.clear()
         self.aes_key.clear()
         while not self.f_finish:
@@ -449,7 +461,7 @@ class Channel(threading.Thread):
     def ask_join(self, pk, message):
         if self.f_finish:
             raise ChannelError('channel closed.')
-        signer, data, key_index = self.cmd_send_rsa(cmd=C_JOIN, data=message, pk=pk, wait=10)
+        signer, data, key_index = self.cmd_send_rsa(cmd=ChannelCmd.JOIN, data=message, pk=pk, wait=10)
         ok, new_aes, members = data
         if not ok:
             raise ChannelError('Reject connection')
@@ -459,9 +471,9 @@ class Channel(threading.Thread):
 
     def send_message(self, msg, pk=None):
         if pk is None:
-            self.cmd_send_aes(cmd=C_MESSAGE, data=msg)
+            self.cmd_send_aes(cmd=ChannelCmd.MESSAGE, data=msg)
         elif self.members.include(pk):
-            self.cmd_send_rsa(cmd=C_MESSAGE, data=msg, pk=pk)
+            self.cmd_send_rsa(cmd=ChannelCmd.MESSAGE, data=msg, pk=pk)
         else:
             raise ChannelError('pk format is not correct.')
 

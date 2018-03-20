@@ -9,9 +9,9 @@ import bjson
 import logging
 import random
 from binascii import hexlify
-from .core import MAX_RECEIVE_SIZE
-from .client import FileReceiveError
-from .encryption import AESCipher
+from ..core import MAX_RECEIVE_SIZE
+from ..client import FileReceiveError
+from ..encryption import AESCipher
 
 
 class FileShare:
