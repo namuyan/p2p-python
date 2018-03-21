@@ -9,9 +9,9 @@ import bjson
 import logging
 import random
 from binascii import hexlify
-from ..core import MAX_RECEIVE_SIZE
-from ..client import FileReceiveError
-from ..encryption import AESCipher
+from ..config import C, V, PeerToPeerError
+from ..client import FileReceiveError, ClientCmd
+from .utils import AESCipher
 
 
 class FileShare:
@@ -27,13 +27,15 @@ class FileShare:
         return AESCipher.create_key()
 
     def share_raw_file(self, pwd=None):
+        if not os.path.exists(self.path):
+            raise FileExistsError('Not found file.')
         if not os.path.isfile(self.path):
-            raise Exception('It\'s a dir.')
+            raise Exception('It\'s a directory.')
         h_list = list()
         sha_hash = sha256()
         with open(self.path, mode='br') as f:
             while True:
-                raw = f.read(MAX_RECEIVE_SIZE)
+                raw = f.read(C.MAX_RECEIVE_SIZE)
                 if not raw:
                     break
                 sha_hash.update(raw)
@@ -137,7 +139,7 @@ class FileShare:
         threads = list()
         f_finish = [None] * num
         for n in range(num):
-            t = threading.Thread(target=self._download, args=(request, f_finish, lock), name='FileShare', daemon=True)
+            t = threading.Thread(target=self.__download, args=(request, f_finish, lock), name='FileShare', daemon=True)
             t.start()
             threads.append(t)
             time.sleep(1)
@@ -147,7 +149,7 @@ class FileShare:
         else:
             return request, f_finish
 
-    def _download(self, request, f_finish, lock):
+    def __download(self, request, f_finish, lock):
         allow_fail = max(5, len(request) // 1000)
         while True:
             # check retry counts
@@ -167,8 +169,8 @@ class FileShare:
             retry = 5
             while True:
                 try:
-                    raw = self.pc.get_file(file_hash=hex_hash, only_check=True)
-                    if raw is True:
+                    raw = self.pc.get_file(file_hash=hex_hash, only_check=False)
+                    if raw:
                         with lock:
                             self.f_contain[i] = True
                         logging.debug("Success %d=0x%s" % (i, hex_hash))

@@ -16,6 +16,7 @@ import random
 UPnPによるNAT超え
 参考：http://d.hatena.ne.jp/yogit/20101006/1286380061
 巷のライブラリ動かないぞ
+rebased
 """
 
 NAME_SERVER = '8.8.8.8'

@@ -3,13 +3,13 @@
 
 
 import collections
-import threading
+from threading import Thread
 import time
 import os.path
 import logging
 
 
-class Traffic(threading.Thread):
+class Traffic(Thread):
     f_stop = False
     f_finish = False
 
