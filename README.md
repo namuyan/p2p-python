@@ -11,8 +11,6 @@ This library enables you create P2P application.
 ```commandline
 pip install git+https://github.com/namuyan/p2p-python.git
 ```
-Look => [HOWTOUSE.md](doc/HOWTOUSE.md)
-
 
 ## how to use
 * command
@@ -22,7 +20,7 @@ Look => [HOWTOUSE.md](doc/HOWTOUSE.md)
     * [another cmd](doc/ANOTHER_CMD.md)
 * tool
     * [FileShare](doc/SHARE.md)
-    * []()
+    * [Channel](doc/CHANNEL.md)
 
 ## Author
 [@namuyan_mine](http://twitter.com/namuyan_mine/)

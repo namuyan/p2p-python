@@ -44,6 +44,7 @@ class StackDict:
                 new[k] = v
                 if len(new) > self.limit // 2:
                     break
+            logging.debug("StackDict refresh now.")
             self.uuid2data = new
 
     def get_data_list(self):
@@ -51,12 +52,13 @@ class StackDict:
 
 
 class QueueSystem:
-    def __init__(self):
+    def __init__(self, maxsize=100):
+        self.maxsize = maxsize
         self.que = list()
         self.lock = Lock()
 
     def create(self):
-        que = queue.LifoQueue(maxsize=10)
+        que = queue.LifoQueue(maxsize=self.maxsize)
         with self.lock:
             self.que.append(que)
         return que
@@ -67,12 +69,16 @@ class QueueSystem:
                 self.que.remove(que)
 
     def broadcast(self, item):
-        with self.lock:
-            for q in copy.copy(self.que):
-                try:
-                    q.put_nowait(item)
-                except queue.Full:
-                    self.que.remove(q)
+        pile = 0
+        for que in copy.copy(self.que):
+            try:
+                que.put_nowait(item)
+                pile = max(pile, que.qsize())
+            except queue.Full:
+                logging.info("QueueSystem find full queue, removed.")
+                self.remove(que)
+        if pile > self.maxsize // 2:
+            logging.warning("QueueSystem piled {}, check code.".format(pile))
 
 
 class AsyncCommunication(Thread):
@@ -274,7 +280,7 @@ class JsonDataBase:
     def save(self):
         with open(self.path, mode='bw') as fp:
             bjson.dump(self.data, fp=fp)
-        logging.info("Saved to {}".format(os.path.split(self.path)[1]))
+        logging.info("JsonDataBase saved to {}".format(os.path.split(self.path)[1]))
 
     def load(self):
         try:
@@ -283,6 +289,7 @@ class JsonDataBase:
         except:
             with open(self.path, mode='bw') as fp:
                 bjson.dump(self.data, fp=fp)
+        logging.info("JsonDataBase load from {}".format(os.path.split(self.path)[1]))
 
     def keys(self):
         return self.data.keys()

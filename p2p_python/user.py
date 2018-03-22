@@ -22,7 +22,7 @@ class User:
 
     def __repr__(self):
         return "<User name={} start={}s warn={}>"\
-            .format(self.name, int(time.time())-self.start_time ,self.warn)
+            .format(self.name, int(time.time())-self.start_time, self.warn)
 
     def getinfo(self):
         r = {
@@ -58,7 +58,7 @@ class User:
 
     def update_neers(self, items):
         # {(host,port): header, ..}
-        self.neers.update(items)
+        self.neers = items
 
     def add_warn(self):
         self.warn += 1

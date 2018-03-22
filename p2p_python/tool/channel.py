@@ -105,6 +105,7 @@ class Channel(Thread):
     f_running = False
     f_failed_together = False  # ch内で分裂の恐れあり
     f_master = False
+    f_debug_detail_print = False
     delay = 10.0  # 送受信時間ズレ
     ping_pong_span = 60 * 5  # ユーザー死活監視間隔
 
@@ -120,11 +121,11 @@ class Channel(Thread):
         self.members = MemberList()  # {pk: rank,..}
         self.aes_key = collections.deque(maxlen=5)
         self.__result = StackDict()
-        self.message = QueueSystem()  # (f_private, signer, item)
+        self.message_que = QueueSystem()  # (f_private, signer, item)
 
     def cmd_send_ecc(self, cmd, data, pk, dummy_pk=None, uuid=None, wait=-1):
         logging.debug("send rsa cmd '{}'".format(cmd))
-        uuid = uuid if uuid else random.randint(100, MAX_INT)
+        uuid = uuid if uuid else random.randint(100, 0xffffffff)
         dummy_pk = dummy_pk if dummy_pk else hex(random.getrandbits(32*8))[2:]
         signer = self.ecc.pk
         raw = bjson.dumps((cmd, data, signer, uuid, self.ch, time.time()))
@@ -151,7 +152,7 @@ class Channel(Thread):
 
     def cmd_send_aes(self, cmd, data, uuid=None, aes_key=None, wait=-1):
         logging.debug("send aes cmd '{}'".format(cmd))
-        uuid = uuid if uuid else random.randint(100, MAX_INT)
+        uuid = uuid if uuid else random.randint(100, 0xffffffff)
         if aes_key:
             pass
         elif len(self.aes_key) > 0:
@@ -254,7 +255,7 @@ class Channel(Thread):
                     self.__result.put(uuid, item=(signer, item, key_index))
                 elif cmd == ChannelCmd.MESSAGE:
                     f_private = (f_type == T_ECC)
-                    self.message.broadcast((f_private, signer, item))
+                    self.message_que.broadcast((f_private, signer, item))
                 elif cmd == ChannelCmd.RUN_FOR_MASTER and f_type == T_AES:
                     election_que.put((cmd, item, signer, uuid))
                 elif cmd == ChannelCmd.VOTE_CANDIDATE and f_type == T_AES:
@@ -290,7 +291,8 @@ class Channel(Thread):
                         new_signer = signer
                         new_rank = max(self.members.data.values()) + 1
                         self.members.put(user=new_signer, item=new_rank)
-                        self.cmd_send_ecc(ChannelCmd.ACTION_RESULT, data=(True, new_aes, self.members.data),
+                        data = (True, new_aes, self.members.data, self.ping_pong_span)
+                        self.cmd_send_ecc(ChannelCmd.ACTION_RESULT, data=data,
                                           pk=signer, dummy_pk=self.ecc.pk, uuid=uuid)
                         self.cmd_send_aes(ChannelCmd.ADD_NEW_MEMBER, (new_aes, new_signer, new_rank))
                         self.aes_key.append(new_aes)
@@ -375,10 +377,12 @@ class Channel(Thread):
         while not self.f_stop:
             try:
                 cmd, data, signer, uuid = election_que.get(timeout=5)
-                logging.debug("receive {} from {} {}".format(cmd, signer, data))
+                if self.f_debug_detail_print:
+                    logging.debug("receive {} from {} {}".format(cmd, signer, data))
 
                 if not self.members.include(signer):
-                    logging.debug("ignore {} from {}".format(cmd, signer))
+                    if self.f_debug_detail_print:
+                        logging.debug("ignore {} from {}".format(cmd, signer))
                     continue
 
                 if cmd == ChannelCmd.RUN_FOR_MASTER:
@@ -477,11 +481,12 @@ class Channel(Thread):
         if self.f_finish:
             raise ChannelError('channel is close.')
         signer, data, key_index = self.cmd_send_ecc(ChannelCmd.JOIN, message, pk=pk, dummy_pk=self.ecc.pk, wait=10)
-        ok, new_aes, members = data
+        ok, new_aes, members, ping_pong_span = data
         if not ok:
             raise ChannelError('Reject connection')
         self.aes_key.append(new_aes)
         self.members.data = members
+        self.ping_pong_span = ping_pong_span
         logging.info("Join channel \"%s\"" % self.ch)
 
     def send_message(self, msg, pk=None):

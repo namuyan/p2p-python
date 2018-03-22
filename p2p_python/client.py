@@ -54,7 +54,7 @@ class PeerClient:
         self.p2p = Core(host='127.0.0.1' if V.F_DEBUG else '', listen=listen)
         self.broadcast_que = QueueSystem()  # BroadcastDataが流れてくる
         self.direct_ac = AsyncCommunication(name=AC_DIRECT)  # DirectCmdを受け付ける窓口
-        self.__broadcast_uuid = collections.deque(maxlen=100)  # Broadcastされたuuid
+        self.__broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
         self.__user2user_route = StackDict()
         self.__waiting_result = StackDict()
         self.peers = JsonDataBase(path=os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
@@ -65,9 +65,6 @@ class PeerClient:
     def close(self):
         self.p2p.close()
         self.f_stop = True
-        while not self.f_finish:
-            time.sleep(1)
-        self.f_stop = self.f_finish = self.f_running = False
 
     def start(self, f_stabilize=True):
         def processing():
@@ -86,10 +83,9 @@ class PeerClient:
                         self.type_ack(user=user, item=item)
                     else:
                         logging.debug("Unknown type {}".format(item['type']))
-                except bjson.BJsonDecodeError:
+                except bjson.BJsonBaseError:
                     self.p2p.remove_connection(user)
-                except bjson.BJsonEncodeError:
-                    logging.debug("bjson encode error", exc_info=V.F_DEBUG)
+                    logging.debug("BJsonBaseError", exc_info=V.F_DEBUG)
                 except queue.Empty:
                     pass
                 except Exception as e:
@@ -130,6 +126,7 @@ class PeerClient:
             elif self.__waiting_result.include(item['uuid']):
                 return  # I'm broadcaster, get from ack
             elif not self.broadcast_check(item['data']):
+                user.warn += 1
                 self.__broadcast_uuid.append(item['uuid'])
                 return  # not allowed broadcast data
             else:
@@ -193,7 +190,6 @@ class PeerClient:
                         send_data = {'hash': file_hash, 'uuid': item['uuid']}
                         dummy, data = self.send_command(cmd=ClientCmd.FILE_CHECK, user=ask_user,
                                                         data=send_data, timeout=2)
-                        print(item['uuid'], data)
                     except Exception as e:
                         logging.debug("Check file existence one by one, %s", e)
                         continue
@@ -260,10 +256,6 @@ class PeerClient:
 
         elif item['cmd'] == ClientCmd.FILE_DELETE:
             item_ = item['data']
-            if 'raw' not in item_ or 'sign' not in item_ or 'pem' not in item_:
-                return
-            elif len(C.MASTER_KEYS) == 0:
-                return
             file_hash = item_['hash']
             signer_pk = item_['signer']
             sign = item_['sign']
@@ -281,6 +273,7 @@ class PeerClient:
             elif self.__waiting_result.include(item['uuid']):
                 return  # I'm broadcaster, get from ack
 
+            self.__broadcast_uuid.append(item['uuid'])
             cert_raw = bjson.dumps((master_pk, signer_pk, cert_start, cert_stop), compress=False)
             sign_raw = bjson.dumps((file_hash, item['uuid']), compress=False)
             deny_list.append(user)
@@ -369,7 +362,7 @@ class PeerClient:
         return c  # 送った送信先
 
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
-        uuid = uuid if uuid else random.randint(10, 4294967295)
+        uuid = uuid if uuid else random.randint(10, 0xffffffff)
         temperate = {
             'type': T_REQUEST,
             'cmd': cmd,
@@ -394,6 +387,8 @@ class PeerClient:
             allows = [user]
         else:
             raise ConnectionError("Not found client")
+        if timeout <= 0:
+            raise PeerToPeerError('timeout is zero.')
         # ネットワークにメッセージを送信
         que = queue.LifoQueue()
         self.__waiting_result.put(uuid, que)
@@ -570,7 +565,7 @@ class PeerClient:
                 # update near info
                 sample_user, item = self.send_command(cmd=ClientCmd.GET_NEARS)
                 sample_user.update_neers(item)
-                logging.debug("Ask {} for peer list".format(sample_user.name))
+
 
                 # Calculate score (高ければ優先度が高い)
                 search = set(self.peers.keys())
@@ -591,7 +586,7 @@ class PeerClient:
                 # Action join or remove or nothing
                 if len(self.p2p.user) > self.p2p.listen * 2 // 3:  # Remove
                     # スコアの下位半分を取得
-                    sorted_score = sorted(user_score.items(), key=lambda x: x[1])[:len(user_score)//2+1]
+                    sorted_score = sorted(user_score.items(), key=lambda x: x[1])[:len(user_score)//3]
                     # 既接続のもののみを取得
                     sorted_score = [(host_port, score) for host_port, score in sorted_score
                                     if host_port in [user.get_host_port() for user in self.p2p.user]]
@@ -614,7 +609,7 @@ class PeerClient:
 
                 elif len(self.p2p.user) < self.p2p.listen * 2 // 3:  # Join
                     # スコア上位半分を取得
-                    sorted_score = sorted(user_score.items(), key=lambda x: x[1])[len(user_score)//2:]
+                    sorted_score = sorted(user_score.items(), key=lambda x: x[1], reverse=True)[:len(user_score)//3]
                     # 既接続を除く
                     sorted_score = [(host_port, score) for host_port, score in sorted_score
                                     if host_port not in [user.get_host_port() for user in self.p2p.user]]

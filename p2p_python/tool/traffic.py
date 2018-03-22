@@ -23,13 +23,14 @@ class Traffic(Thread):
 
     def close(self):
         self.f_stop = True
-        while not self.f_finish:
-            time.sleep(1)
+        logging.debug("traffic close.")
 
     def run(self):
         count = 0
-        while not self.f_stop:
+        while True:
             time.sleep(self.span)
+            if self.f_stop:
+                break
             count += 1
             time_, up, down = int(time.time()), sum(self.traffic_up), sum(self.traffic_down)
             self.data.append((time_, up, down))

@@ -36,7 +36,7 @@ class Core(Thread):
         self.ecc = Encryption()
         self.ecc.secret_key()
         self.ecc.public_key()
-        self.core_que = QueueSystem()
+        self.core_que = QueueSystem(maxsize=listen*100)
         self.listen = listen
         self.buffsize = buffsize
         self.traffic = Traffic()
@@ -52,10 +52,6 @@ class Core(Thread):
         for user in self.user:
             try: user.sock.close()
             except: pass
-        # 回ってるループを全て閉じる
-        while not self.f_finish:
-            time.sleep(1)
-        self.f_stop = self.f_finish = False
 
     def run(self):
         self.traffic.start()
@@ -78,8 +74,10 @@ class Core(Thread):
                 try: sock.close()
                 except: pass
                 logging.debug("JSONDecodeError by {}".format(host_port[0]))
-            except socket.timeout:
-                pass
+            except OSError as e:
+                try: sock.close()
+                except: pass
+                logging.debug("OSError {}".format(e))
             except Exception as e:
                 try: sock.close()
                 except: pass
@@ -117,7 +115,8 @@ class Core(Thread):
             sock.connect(host_port)
             # ヘッダーを送る
             send = json.dumps(self.get_server_header()).encode()
-            sock.sendall(send)
+            with self.lock:
+                sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を受取る
             receive = sock.recv(self.buffsize)
@@ -125,7 +124,8 @@ class Core(Thread):
             public_key = json.loads(receive.decode())['public-key']
             # 公開鍵を送る
             send = json.dumps({'public-key': self.ecc.pk}).encode()
-            sock.sendall(send)
+            with self.lock:
+                sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # AESKEYとヘッダーを取得し復号化する
             receive = sock.recv(self.buffsize)
@@ -143,7 +143,8 @@ class Core(Thread):
                 self.number += 1
             # Acceptシグナルを送る
             encrypted = AESCipher.encrypt(new_user.aeskey, b'accept')
-            sock.sendall(encrypted)
+            with self.lock:
+                sock.sendall(encrypted)
             self.traffic.put_traffic_up(encrypted)
 
             Thread(target=self.__receive_msg,
@@ -197,7 +198,8 @@ class Core(Thread):
         msg_body = zlib.compress(msg_body)
         msg_body = AESCipher.encrypt(key=user.aeskey, raw=msg_body)
         msg_len = len(msg_body).to_bytes(4, 'big')
-        user.sock.sendall(msg_len + msg_body)
+        with self.lock:
+            user.sock.sendall(msg_len + msg_body)
         self.traffic.put_traffic_up(msg_len + msg_body)
         # logging.debug("Send {}Kb to '{}'".format(len(msg_len+msg_body) / 1000, user.name))
         return user
@@ -218,7 +220,8 @@ class Core(Thread):
             new_user.deserialize(header)
             # こちらの公開鍵を送る
             send = json.dumps({'public-key': self.ecc.pk}).encode()
-            sock.sendall(send)
+            with self.lock:
+                sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を取得する
             receive = new_user.sock.recv(self.buffsize)
@@ -229,7 +232,8 @@ class Core(Thread):
             # AESKEYとHeaderを暗号化して送る
             encrypted = self.ecc.encrypt(recipient_pk=public_key, msg=json.dumps(
                 {'aes-key': new_user.aeskey, 'header': self.get_server_header()}).encode(), encode='raw')
-            new_user.sock.sendall(encrypted)
+            with self.lock:
+                new_user.sock.sendall(encrypted)
             self.traffic.put_traffic_up(encrypted)
             # Accept信号を受け取る
             encrypted = new_user.sock.recv(self.buffsize)
