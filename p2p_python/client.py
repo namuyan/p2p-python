@@ -15,15 +15,13 @@ from threading import Thread
 from nem_ed25519.base import Encryption
 from .config import C, V, PeerToPeerError
 from .core import Core
-from .utils import is_reachable, trim_msg
-from .tool.utils import StackDict, AsyncCommunication, JsonDataBase, QueueSystem
+from .utils import is_reachable
+from .tool.utils import StackDict, EventIgnition, JsonDataBase, QueueSystem
 from .tool.upnpc import UpnpClient
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
 GLOBAL_IP = UpnpClient.get_global_ip()
 
-# DirectCmdの窓口
-AC_DIRECT = 'ac/direct'
 
 # Constant type
 T_REQUEST = 'type/client/request'
@@ -53,7 +51,7 @@ class PeerClient:
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
         self.p2p = Core(host='127.0.0.1' if V.F_DEBUG else '', listen=listen)
         self.broadcast_que = QueueSystem()  # BroadcastDataが流れてくる
-        self.direct_ac = AsyncCommunication(name=AC_DIRECT)  # DirectCmdを受け付ける窓口
+        self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self.__broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
         self.__user2user_route = StackDict()
         self.__waiting_result = StackDict()
@@ -96,7 +94,6 @@ class PeerClient:
             logging.info("Close process.")
         self.f_running = True
         self.p2p.start()
-        self.direct_ac.start()
         if f_stabilize:
             Thread(target=self.stabilize, name='Stabilize', daemon=True).start()
         # Processing
@@ -299,9 +296,10 @@ class PeerClient:
         elif item['cmd'] == ClientCmd.DIRECT_CMD:
             def direct_cmd():
                 data = item['data']
-                temperate['data'] = self.direct_ac.send_cmd(data['cmd'], data['data'], data['to'], data['uuid'])
+                temperate['data'] = self.event.work(cmd=data['cmd'], data=data['data'])
                 self._send_msg(item=temperate, allows=[user])
-            Thread(target=direct_cmd, name='DirectCmd', daemon=True).start()
+            if 'cmd' in item['data'] and item['data']['cmd'] in self.event:
+                Thread(target=direct_cmd, name='DirectCmd', daemon=True).start()
         else:
             pass
 
@@ -407,7 +405,7 @@ class PeerClient:
         # Timeout時に raise queue.Empty
         return user, item
 
-    def send_direct_cmd(self, cmd, data, to_name='*', user=None, uuid=None):
+    def send_direct_cmd(self, cmd, data, user=None, uuid=None):
         if len(self.p2p.user) == 0:
             raise PeerToPeerError('No peers.')
         user = user if user else random.choice(self.p2p.user)
@@ -415,8 +413,7 @@ class PeerClient:
         send_data = {
             'cmd': cmd,
             'data': data,
-            'uuid': uuid,
-            'to': to_name}
+            'uuid': uuid}
         dummy, item = self.send_command(ClientCmd.DIRECT_CMD, send_data, uuid, user)
         return user, item
 

@@ -223,6 +223,27 @@ class AsyncCommunication(Thread):
             return
 
 
+class EventIgnition:
+    def __init__(self):
+        self.event = dict()
+
+    def addevent(self, cmd, f):
+        self.event[cmd] = f
+
+    def removevent(self, cmd):
+        if cmd in self.event:
+            del self.event[cmd]
+
+    def __contains__(self, item):
+        return item in self.event
+
+    def work(self, cmd, data):
+        if cmd in self.event:
+            return self.event[cmd](data)
+        else:
+            raise KeyError('Not found cmd "{}"'.format(cmd))
+
+
 class AESCipher:
     @staticmethod
     def create_key():

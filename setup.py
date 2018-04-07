@@ -23,14 +23,6 @@ version = next((line.split('=')[1].strip().replace("'", '')
                 if line.startswith('__version__ = ')),
                '0.0.dev0')
 
-# requires
-try:
-    with open('requirements.txt', mode='r') as fp:
-        requires = fp.read().split('\n')
-except UnicodeError:
-    with open('requirements.txt', mode='r', encoding='utf8') as fp:
-        requires = fp.read().split('\n')
-
 setup(
     name="p2p_python",
     version=version,
@@ -41,7 +33,6 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     license="MIT Licence",
-    install_requires=requires,
     classifiers=[
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.5',
