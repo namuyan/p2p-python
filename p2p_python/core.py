@@ -218,6 +218,8 @@ class Core(Thread):
                     return  # Already connected.
                 self.number += 1
             new_user.deserialize(header)
+            if new_user.name == V.SERVER_NAME:
+                raise ConnectionAbortedError('Same origin connection.')
             # こちらの公開鍵を送る
             send = json.dumps({'public-key': self.ecc.pk}).encode()
             with self.lock:

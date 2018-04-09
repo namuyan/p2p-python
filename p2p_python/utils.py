@@ -23,7 +23,8 @@ def get_name():
     return "{}:{}".format(random.choice(name), random.randint(10000, 99999))
 
 
-def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, sub_dir=None):
+def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, sub_dir=None, f_debug=False):
+    V.F_DEBUG = f_debug
     # directory params
     if V.DATA_PATH is not None:
         raise BaseException('Already setup params.')

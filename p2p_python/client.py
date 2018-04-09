@@ -509,6 +509,10 @@ class PeerClient:
     def stabilize(self):
         time.sleep(5)
         logging.info("start stabilize.")
+        ignore_peers = {
+            (GLOBAL_IP, V.P2P_PORT),
+            (LOCAL_IP, V.P2P_PORT),
+            ('127.0.0.1', V.P2P_PORT)}
         if len(self.peers) == 0:
             logging.info("peer list is zero, need bootnode.")
         else:
@@ -517,10 +521,15 @@ class PeerClient:
             peer_host_port = list(self.peers.keys())
             random.shuffle(peer_host_port)
             for host_port in peer_host_port:
+                if host_port in ignore_peers:
+                    del self.peers[host_port]
+                    continue
                 header = self.peers[host_port]
                 if header['p2p_accept']:
                     if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
                         need -= 1
+                    else:
+                        del self.peers[host_port]
                 if need <= 0:
                     break
                 else:
@@ -544,9 +553,13 @@ class PeerClient:
             try:
                 if len(self.p2p.user) == 0 and len(self.peers) > 0:
                     host_port = random.choice(list(self.peers.keys()))
+                    if host_port in ignore_peers:
+                        del self.peers[host_port]
+                        continue
                     if self.p2p.create_connection(host_port[0], host_port[1]):
                         time.sleep(5)
                     else:
+                        del self.peers[host_port]
                         continue
                 elif len(self.p2p.user) == 0 and len(self.peers) == 0:
                     time.sleep(10)
@@ -556,13 +569,9 @@ class PeerClient:
                 for user in self.p2p.user:
                     self.peers[user.get_host_port()] = user.serialize()
 
-                # ignore list
-                ignore_peers = {(GLOBAL_IP, V.P2P_PORT), (LOCAL_IP, V.P2P_PORT), ('127.0.0.1', V.P2P_PORT)}
-
                 # update near info
                 sample_user, item = self.send_command(cmd=ClientCmd.GET_NEARS)
                 sample_user.update_neers(item)
-
 
                 # Calculate score (高ければ優先度が高い)
                 search = set(self.peers.keys())
@@ -617,7 +626,10 @@ class PeerClient:
                     host_port, score = random.choice(sorted_score)
                     if self.p2p.host_port2user(host_port):
                         continue  # 既に接続済み
-                    if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
+                    elif host_port in ignore_peers:
+                        del self.peers[host_port]
+                        continue
+                    elif self.p2p.create_connection(host=host_port[0], port=host_port[1]):
                         logging.debug("New connection {}".format(host_port))
                     else:
                         logging.info("Failed connect, remove {}".format(host_port))
