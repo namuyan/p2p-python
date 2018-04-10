@@ -14,7 +14,7 @@ from nem_ed25519.base import Encryption
 from nem_ed25519.signature import verify
 from .utils import StackDict, QueueSystem, AESCipher
 from ..client import ClientCmd
-from ..config import V
+from ..config import V, Debug
 
 """
 1, 新規受け付けはMasterNodeのみ
@@ -136,7 +136,7 @@ class Channel(Thread):
             'data': self.ecc.encrypt(recipient_pk=pk, msg=send_data, encode='raw'),
             'ch': self.ch,
             'pk': dummy_pk}
-        if V.F_DEBUG:
+        if Debug.F_SEND_CHANNEL_INFO:
             template['debug'] = (cmd, data, signer, uuid, self.ch, time.time())
         self.pc.send_command(ClientCmd.BROADCAST, data=template)
         if wait < 0:
@@ -167,7 +167,7 @@ class Channel(Thread):
             'type': T_AES,
             'data': AESCipher.encrypt(aes_key, send_data),
             'ch': self.ch}
-        if V.F_DEBUG:
+        if Debug.F_SEND_CHANNEL_INFO:
             template['debug'] = (cmd, data, rank, uuid, self.ch, time.time())
         self.pc.send_command(cmd=ClientCmd.BROADCAST, data=template)
         if wait < 0:
@@ -268,13 +268,13 @@ class Channel(Thread):
             except queue.Empty:
                 pass
             except ValueError:
-                logging.debug("decrypt error", exc_info=V.F_DEBUG)
+                logging.debug("decrypt error", exc_info=Debug.P_EXCEPTION)
                 pass  # decryption error
             except bjson.BJsonBaseError:
-                # logging.debug("bjson error", exc_info=V.F_DEBUG)
+                # logging.debug("bjson error", exc_info=Debug.P_EXCEPTION)
                 pass
             except Exception:
-                logging.debug("general error", exc_info=V.F_DEBUG)
+                logging.debug("general error", exc_info=Debug.P_EXCEPTION)
         self.f_finish = True
         self.f_running = False
         logging.info("Close main loop.")

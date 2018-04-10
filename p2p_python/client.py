@@ -13,7 +13,7 @@ import collections
 from hashlib import sha256
 from threading import Thread
 from nem_ed25519.base import Encryption
-from .config import C, V, PeerToPeerError
+from .config import C, V, Debug, PeerToPeerError
 from .core import Core
 from .utils import is_reachable
 from .tool.utils import StackDict, EventIgnition, JsonDataBase, QueueSystem
@@ -47,9 +47,9 @@ class PeerClient:
     f_finish = False
     f_running = False
 
-    def __init__(self, listen=15):
+    def __init__(self, listen=15, f_local=False):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
-        self.p2p = Core(host='127.0.0.1' if V.F_DEBUG else '', listen=listen)
+        self.p2p = Core(host='127.0.0.1' if f_local else '', listen=listen)
         self.broadcast_que = QueueSystem()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self.__broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
@@ -57,7 +57,7 @@ class PeerClient:
         self.__waiting_result = StackDict()
         self.peers = JsonDataBase(path=os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
         # recode traffic if f_debug true
-        if V.F_DEBUG:
+        if Debug.F_RECODE_TRAFFIC:
             self.p2p.traffic.recode_dir = V.TMP_PATH
 
     def close(self):
@@ -83,12 +83,12 @@ class PeerClient:
                         logging.debug("Unknown type {}".format(item['type']))
                 except bjson.BJsonBaseError:
                     self.p2p.remove_connection(user)
-                    logging.debug("BJsonBaseError", exc_info=V.F_DEBUG)
+                    logging.debug("BJsonBaseError", exc_info=Debug.P_EXCEPTION)
                 except queue.Empty:
                     pass
                 except Exception as e:
                     logging.debug("Processing error, ({}, {}, {})"
-                                  .format(user.name, msg_body, e), exc_info=V.F_DEBUG)
+                                  .format(user.name, msg_body, e), exc_info=Debug.P_EXCEPTION)
             self.f_finish = True
             self.f_running = False
             logging.info("Close process.")

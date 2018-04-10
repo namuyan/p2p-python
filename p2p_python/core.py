@@ -11,7 +11,7 @@ from threading import Thread, Lock
 from nem_ed25519.base import Encryption
 from .tool.traffic import Traffic
 from .tool.utils import AESCipher, QueueSystem
-from .config import C, V, PeerToPeerError
+from .config import C, V, Debug, PeerToPeerError
 from .user import User
 
 # constant
@@ -81,7 +81,7 @@ class Core(Thread):
             except Exception as e:
                 try: sock.close()
                 except: pass
-                logging.debug(e, exc_info=V.F_DEBUG)
+                logging.debug(e, exc_info=Debug.P_EXCEPTION)
         try: server_sock.close()
         except: pass
         self.f_finish = True
@@ -161,15 +161,15 @@ class Core(Thread):
         except PeerToPeerError as e:
             try: sock.close()
             except: pass
-            logging.debug("NewConnectionError {} {}".format(host_port, e), exc_info=V.F_DEBUG)
+            logging.debug("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
         except ConnectionRefusedError as e:
             try: sock.close()
             except: pass
-            logging.debug("ConnectionRefusedError {} {}".format(host_port, e), exc_info=V.F_DEBUG)
+            logging.debug("ConnectionRefusedError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
         except Exception as e:
             try: sock.close()
             except: pass
-            logging.error("NewConnectionError {} {}".format(host_port, e), exc_info=V.F_DEBUG)
+            logging.error("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
         return False
 
     def remove_connection(self, user):
@@ -250,7 +250,7 @@ class Core(Thread):
         except socket.timeout:
             pass
         except Exception as e:
-            logging.debug(e, exc_info=V.F_DEBUG)
+            logging.debug(e, exc_info=Debug.P_EXCEPTION)
         else:
             Thread(target=self.__receive_msg, name='S:' + new_user.name,
                    daemon=True, args=(new_user,)).start()
@@ -323,17 +323,17 @@ class Core(Thread):
                 logging.debug("socket timeout {}".format(user.name))
                 break
             except ConnectionAbortedError:
-                logging.debug("1ConnectionAbortedError", exc_info=V.F_DEBUG)
+                logging.debug("1ConnectionAbortedError", exc_info=Debug.P_EXCEPTION)
                 logging.debug("2ConnectionAbortedError :len={}, msg={}".format(msg_len, msg_body))
                 break
             except ConnectionResetError:
-                logging.debug("ConnectionResetError by {}".format(user.name), exc_info=V.F_DEBUG)
+                logging.debug("ConnectionResetError by {}".format(user.name), exc_info=Debug.P_EXCEPTION)
                 break
             except OSError as e:
-                logging.debug("OSError by {}, {}".format(user.name, e), exc_info=V.F_DEBUG)
+                logging.debug("OSError by {}, {}".format(user.name, e), exc_info=Debug.P_EXCEPTION)
                 break
             except Exception as e:
-                logging.debug("BaseException by {}, {}".format(user.name, e), exc_info=V.F_DEBUG)
+                logging.debug("BaseException by {}, {}".format(user.name, e), exc_info=Debug.P_EXCEPTION)
                 break
 
         # raised exception on loop

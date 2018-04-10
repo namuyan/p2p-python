@@ -2,11 +2,11 @@ import socket
 import os
 import random
 from tempfile import gettempdir
-from .config import V
+from .config import V, Debug
 
 
 def get_version():
-    if V.F_DEBUG:
+    if Debug.P_EXCEPTION:
         return 'debug'
     hear = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(hear, '__init__.py'), mode='r') as fp:
@@ -24,7 +24,9 @@ def get_name():
 
 
 def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, sub_dir=None, f_debug=False):
-    V.F_DEBUG = f_debug
+    if f_debug:
+        Debug.P_EXCEPTION = True
+        Debug.P_RECEIVE_MSG_INFO = True
     # directory params
     if V.DATA_PATH is not None:
         raise BaseException('Already setup params.')

@@ -11,7 +11,7 @@ Start
 #!/user/env python3
 # -*- coding: utf-8 -*-
  
-from p2p_python.config import C, V
+from p2p_python.config import C, V, Debug
 from p2p_python.utils import setup_p2p_params
 from p2p_python.client import PeerClient, ClientCmd
 from p2p_python.tool.channel import Channel, ChannelCmd
@@ -44,7 +44,7 @@ def work():
         port = 2000
         setup_p2p_params(network_ver=12345, p2p_port=port, p2p_accept=True)
  
-    V.F_DEBUG = True
+    Debug.P_EXCEPTION = True
     get_logger(level=logging.DEBUG)
     pc = PeerClient()
     pc.start()

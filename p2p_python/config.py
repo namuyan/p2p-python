@@ -24,9 +24,15 @@ class V:
     P2P_PORT = None
     P2P_ACCEPT = None
 
-    # debug
-    F_DEBUG = False
+    # setting
     F_FILE_CONTINUE_ASKING = False
+
+
+class Debug:
+    P_EXCEPTION = False  # print exception info
+    P_RECEIVE_MSG_INFO = False  # print receive msg info
+    F_RECODE_TRAFFIC = False  # recode traffic to file
+    F_SEND_CHANNEL_INFO = False  # send to details with channel fnc
 
 
 class PeerToPeerError(Exception):
