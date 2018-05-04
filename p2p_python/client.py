@@ -312,8 +312,9 @@ class PeerClient:
             temperate['data'] = send_count
             ack_count = self._send_msg(item=temperate, allows=ack_list)
         # debug
-        logging.debug("Reply to request {} All={}, Send={}, Ack={}"
-                      .format(temperate['cmd'], len(self.p2p.user), send_count, ack_count))
+        if Debug.P_RECEIVE_MSG_INFO:
+            logging.debug("Reply to request {} All={}, Send={}, Ack={}"
+                          .format(temperate['cmd'], len(self.p2p.user), send_count, ack_count))
 
     def type_response(self, user, item):
         cmd = item['cmd']
@@ -328,7 +329,8 @@ class PeerClient:
                     return
         if self.__waiting_result.include(uuid):
             que = self.__waiting_result.get(uuid)
-            que.put((user, data))
+            if que:
+                que.put((user, data))
             # logging.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
             # logging.debug("2:Data is '{}'".format(trim_msg(str(data), 80)))
 
@@ -339,7 +341,8 @@ class PeerClient:
 
         if self.__waiting_result.include(uuid):
             que = self.__waiting_result.get(uuid)
-            que.put((user, data))
+            if que:
+                que.put((user, data))
             # logging.debug("Get ack from {}".format(user.name))
 
     def _send_msg(self, item, allows=None, denys=None):
@@ -395,7 +398,11 @@ class PeerClient:
         try:
             user, item = que.get(timeout=timeout)
             user.warn = 0
+            self.__waiting_result.put(uuid, None)
+            del que
         except queue.Empty:
+            self.__waiting_result.put(uuid, None)
+            del que
             self.p2p.remove_connection(user)
             name = user.name if user else 'ManyUser({})'.format(len(allows))
             raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, name, data))

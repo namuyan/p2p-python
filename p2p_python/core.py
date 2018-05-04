@@ -106,12 +106,14 @@ class Core(Thread):
             'start_time': self.start_time}
 
     def create_connection(self, host, port):
-        host_port = (socket.gethostbyname(host), int(port))
-        if self.host_port2user(host_port) is not None:
-            return False  # Already connected.
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(10)
+        sock = host_port = None
         try:
+            host_port = (socket.gethostbyname(host), int(port))
+            if self.host_port2user(host_port) is not None:
+                return False  # Already connected.
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
+            # Connection
             sock.connect(host_port)
             # ヘッダーを送る
             send = json.dumps(self.get_server_header()).encode()

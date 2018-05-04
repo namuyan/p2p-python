@@ -117,10 +117,13 @@ class UpnpClient(threading.Thread):
 
     @staticmethod
     def get_localhost_ip():
-        return [
-            (s.connect((NAME_SERVER, 80)), s.getsockname()[0], s.close())
-            for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
-        ][0][1]
+        try:
+            return [
+                (s.connect((NAME_SERVER, 80)), s.getsockname()[0], s.close())
+                for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
+                ][0][1]
+        except BaseException:
+            return '127.0.0.1'
 
     @staticmethod
     def get_global_ip():
