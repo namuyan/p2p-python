@@ -9,6 +9,8 @@ This library enables you create P2P application.
 
 ## How to install
 ```commandline
+pip install p2p-python
+or
 pip install git+https://github.com/namuyan/p2p-python.git
 ```
 
@@ -21,6 +23,11 @@ pip install git+https://github.com/namuyan/p2p-python.git
 * tool
     * [FileShare](doc/SHARE.md)
     * [Channel](doc/CHANNEL.md)
+
+## Tutorial
+Please read first of all.
+[Tutorial:Peer2peerChat](doc/TUTORIAL.md)
+
 
 ## Author
 [@namuyan_mine](http://twitter.com/namuyan_mine/)
