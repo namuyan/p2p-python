@@ -21,7 +21,7 @@ from .tool.upnpc import UpnpClient
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
 GLOBAL_IP = UpnpClient.get_global_ip()
-
+STICKY_LIMIT = 2
 
 # Constant type
 T_REQUEST = 'type/client/request'
@@ -544,6 +544,7 @@ class PeerClient:
 
         # Stabilize
         user_score = dict()
+        sticky_nodes = dict()
         count = 0
         need_connection = 3
         while not self.f_stop:
@@ -554,6 +555,10 @@ class PeerClient:
                 time.sleep(2)
             elif count % 24 == 1:
                 time.sleep(5 * (1 + random.random()))
+            elif count % 701 == 1:
+                logging.debug("Sticky list refresh now. {}".format(len(sticky_nodes)))
+                sticky_nodes.clear()
+                time.sleep(5)
             else:
                 time.sleep(5)
                 continue
@@ -625,7 +630,8 @@ class PeerClient:
                     sorted_score = sorted(user_score.items(), key=lambda x: x[1], reverse=True)[:len(user_score)//3]
                     # 既接続を除く
                     sorted_score = [(host_port, score) for host_port, score in sorted_score
-                                    if host_port not in [user.get_host_port() for user in self.p2p.user]]
+                                    if host_port not in [user.get_host_port() for user in self.p2p.user]
+                                    and sticky_nodes.get(host_port, 0) < STICKY_LIMIT]
                     if len(sorted_score) == 0:
                         time.sleep(10)
                         continue
@@ -633,6 +639,8 @@ class PeerClient:
                     host_port, score = random.choice(sorted_score)
                     if self.p2p.host_port2user(host_port):
                         continue  # 既に接続済み
+                    elif sticky_nodes.get(host_port, 0) > STICKY_LIMIT:
+                        continue  # 接続不能回数大杉
                     elif host_port in ignore_peers:
                         del self.peers[host_port]
                         continue
@@ -640,6 +648,7 @@ class PeerClient:
                         logging.debug("New connection {}".format(host_port))
                     else:
                         logging.info("Failed connect, remove {}".format(host_port))
+                        sticky_nodes[host_port] = sticky_nodes.get(host_port, 0) + 1
                         del self.peers[host_port]
                         del user_score[host_port]
 
