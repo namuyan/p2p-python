@@ -15,7 +15,7 @@ from base64 import b64encode, b64decode
 
 
 class StackDict:
-    def __init__(self, limit=100):
+    def __init__(self, limit=500):
         self.uuid2data = dict()
         self.lock = Lock()
         self.limit = limit

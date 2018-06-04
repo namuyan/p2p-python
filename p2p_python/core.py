@@ -285,7 +285,7 @@ class Core(Thread):
                 msg_body = first_msg[4:]
 
                 # Notice long message
-                if msg_len != len(msg_body):
+                if Debug.F_LONG_MSG_INFO and msg_len != len(msg_body):
                     logging.debug("Receive long msg, len=%d, body=%d" % (msg_len, len(msg_body)))
 
                 if msg_len == 0:

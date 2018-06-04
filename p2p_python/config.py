@@ -33,6 +33,7 @@ class Debug:
     P_RECEIVE_MSG_INFO = False  # print receive msg info
     F_RECODE_TRAFFIC = False  # recode traffic to file
     F_SEND_CHANNEL_INFO = False  # send to details with channel fnc
+    F_LONG_MSG_INFO = False  # long message info
 
 
 class PeerToPeerError(Exception):

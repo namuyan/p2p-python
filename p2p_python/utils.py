@@ -27,6 +27,7 @@ def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, sub_dir=None, f_deb
     if f_debug:
         Debug.P_EXCEPTION = True
         Debug.P_RECEIVE_MSG_INFO = True
+        Debug.F_LONG_MSG_INFO = True
     # directory params
     if V.DATA_PATH is not None:
         raise BaseException('Already setup params.')
