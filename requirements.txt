@@ -3,3 +3,4 @@ xmltodict
 requests
 bjson
 pysocks
+nem-ed25519

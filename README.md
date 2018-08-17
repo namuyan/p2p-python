@@ -26,7 +26,8 @@ pip install git+https://github.com/namuyan/p2p-python.git
 
 ## Tutorial
 Please read first of all.
-[Tutorial:Peer2peerChat](doc/TUTORIAL.md)
+[Tutorial](doc/TUTORIAL.md)  
+[p2p-pythonの内部動作について](https://ameblo.jp/namuyan/entry-12398575560.html)
 
 
 ## Author
