@@ -174,13 +174,13 @@ class Core(Thread):
             logging.error("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
         return False
 
-    def remove_connection(self, user):
+    def remove_connection(self, user, reason=None):
         with self.lock:
             if user in self.user:
                 self.user.remove(user)
                 try: user.close()
                 except: pass
-                logging.debug("remove connection to %s" % user.name)
+                logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
                 return True
             return False
 

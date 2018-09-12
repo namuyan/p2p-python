@@ -11,7 +11,7 @@ import copy
 import queue
 import collections
 from hashlib import sha256
-from threading import Thread
+from threading import Thread, get_ident
 from nem_ed25519.base import Encryption
 from .config import C, V, Debug, PeerToPeerError
 from .core import Core
@@ -59,6 +59,7 @@ class PeerClient:
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
             self.p2p.traffic.recode_dir = V.TMP_PATH
+        self.threadid = None
 
     def close(self):
         self.p2p.close()
@@ -66,6 +67,7 @@ class PeerClient:
 
     def start(self, f_stabilize=True):
         def processing():
+            self.threadid = get_ident()
             que = self.p2p.core_que.create()
             while not self.f_stop:
                 user = msg_body = None
@@ -363,6 +365,7 @@ class PeerClient:
         return c  # 送った送信先
 
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
+        assert get_ident() != self.threadid, "The thread is used by p2p_python!"
         uuid = uuid if uuid else random.randint(10, 0xffffffff)
         temperate = {
             'type': T_REQUEST,
@@ -393,18 +396,18 @@ class PeerClient:
         # ネットワークにメッセージを送信
         que = queue.LifoQueue()
         self.__waiting_result.put(uuid, que)
-        self._send_msg(item=temperate, allows=allows)
+        send_num = self._send_msg(item=temperate, allows=allows)
+        if send_num == 0:
+            raise PeerToPeerError('We try to send no client? {}clients connected.'.format(len(self.p2p.user)))
         # 返事が返ってくるのを待つ
         try:
             user, item = que.get(timeout=timeout)
             user.warn = 0
             self.__waiting_result.put(uuid, None)
-            del que
         except queue.Empty:
             self.__waiting_result.put(uuid, None)
-            del que
-            self.p2p.remove_connection(user)
-            name = user.name if user else 'ManyUser({})'.format(len(allows))
+            self.p2p.remove_connection(user, "Timeout by waiting {}".format(cmd))
+            name = user.name if user else '{}users'.format(len(allows))
             raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, name, data))
 
         if cmd == ClientCmd.BROADCAST:
