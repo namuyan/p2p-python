@@ -577,12 +577,11 @@ class PeerClient:
                 time.sleep(5)
             elif count < 5 and len(self.p2p.user) < need_connection:
                 time.sleep(2)
-            elif count % 24 == 1:
-                time.sleep(5 * (1 + random.random()))
-            elif count % 701 == 1:
-                logging.debug("Sticky list refresh now. {}".format(len(sticky_nodes)))
+            elif len(self.p2p.user) < need_connection:
                 sticky_nodes.clear()
                 time.sleep(5)
+            elif count % 24 == 1:
+                time.sleep(5 * (1 + random.random()))
             else:
                 time.sleep(5)
                 continue
