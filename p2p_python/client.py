@@ -66,17 +66,23 @@ class PeerClient:
         self.f_stop = True
 
     def start(self, f_stabilize=True):
+        processing_que = self.p2p.core_que.create()
+        broadcast_que = queue.LifoQueue()
+
         def processing():
             self.threadid = get_ident()
-            que = self.p2p.core_que.create()
             while not self.f_stop:
                 user = msg_body = None
                 try:
-                    user, msg_body = que.get(timeout=1)
+                    user, msg_body = processing_que.get(timeout=1)
                     item = bjson.loads(msg_body)
 
                     if item['type'] == T_REQUEST:
-                        self.type_request(user=user, item=item)
+                        if item['cmd'] == ClientCmd.BROADCAST:
+                            # broadcastはCheckを含む為に別スレッド
+                            broadcast_que.put((user, item))
+                        else:
+                            self.type_request(user=user, item=item)
                     elif item['type'] == T_RESPONSE:
                         self.type_response(user=user, item=item)
                     elif item['type'] == T_ACK:
@@ -93,13 +99,28 @@ class PeerClient:
                                   .format(user.name, msg_body, e), exc_info=Debug.P_EXCEPTION)
             self.f_finish = True
             self.f_running = False
-            logging.info("Close process.")
+            logging.info("Close processing.")
+
+        def broadcast():
+            while not self.f_stop:
+                user = None
+                try:
+                    user, item = broadcast_que.get(timeout=1)
+                    self.type_request(user=user, item=item)
+                except queue.Empty:
+                    pass
+                except Exception as e:
+                    logging.debug("Processing error, ({}, {})"
+                                  .format(user.name, e), exc_info=Debug.P_EXCEPTION)
+            logging.info("Close broadcast.")
+
         self.f_running = True
         self.p2p.start()
         if f_stabilize:
-            Thread(target=self.stabilize, name='Stabilize', daemon=True).start()
+            Thread(target=self.stabilize, name='Stabilize').start()
         # Processing
-        Thread(target=processing, name='Process', daemon=True).start()
+        Thread(target=processing, name='Process').start()
+        Thread(target=broadcast, name="Broadcast").start()
         logging.info("start user, name is {}, port is {}".format(V.SERVER_NAME, V.P2P_PORT))
 
     def type_request(self, user, item):
@@ -248,10 +269,10 @@ class PeerClient:
             file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
             # When you have file, sending. When you don't have file, asking
             if os.path.exists(file_path):
-                Thread(target=sending, name='Sending', daemon=True).start()
+                Thread(target=sending, name='Sending').start()
             elif V.F_FILE_CONTINUE_ASKING:
                 # Default disable
-                Thread(target=asking, name='Asking', daemon=True).start()
+                Thread(target=asking, name='Asking').start()
 
         elif item['cmd'] == ClientCmd.FILE_DELETE:
             item_ = item['data']
@@ -301,7 +322,7 @@ class PeerClient:
                 temperate['data'] = self.event.work(cmd=data['cmd'], data=data['data'])
                 self._send_msg(item=temperate, allows=[user])
             if 'cmd' in item['data'] and item['data']['cmd'] in self.event:
-                Thread(target=direct_cmd, name='DirectCmd', daemon=True).start()
+                Thread(target=direct_cmd, name='DirectCmd').start()
         else:
             pass
 

@@ -106,7 +106,7 @@ class AsyncCommunication(Thread):
     f_running = False
 
     def __init__(self, name, limit=200):
-        super().__init__(name=name, daemon=True)
+        super().__init__(name=name)
         self.que = QueueSystem()
         self.lock = Lock()
         self.__result = dict()

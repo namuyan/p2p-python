@@ -7,7 +7,7 @@ import os
 try:
     with open('README.md') as f:
         readme = f.read()
-except IOError:
+except (IOError, UnicodeError):
     readme = ''
 
 

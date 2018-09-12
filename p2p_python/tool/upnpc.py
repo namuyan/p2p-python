@@ -30,7 +30,7 @@ class UpnpClient(threading.Thread):
     OPEN_SPAN = 7200
 
     def __init__(self):
-        super().__init__(name='UPnPC', daemon=True)
+        super().__init__(name='UPnPC')
 
     def stop(self):
         self.f_stop = True
