@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import json
+import bjson
 import logging
 import random
 import socket
@@ -190,8 +191,10 @@ class Core(Thread):
         if len(self.user) == 0:
             raise ConnectionError('client connection is zero.')
         elif len(msg_body) > C.MAX_RECEIVE_SIZE + 5000:
-            raise ConnectionRefusedError('Max message size is {}Kb (You try {}Kb)'
-                                         .format(C.MAX_RECEIVE_SIZE / 1000, len(msg_body) / 1000))
+            error = 'Max message size is {}kb (You try {}Kb)'.format(
+                round(C.MAX_RECEIVE_SIZE/1000000, 3), round(len(msg_body)/1000000, 3))
+            self.send_msg_body(msg_body=bjson.dumps(error), user=user)
+            raise ConnectionRefusedError(error)
         elif user is None:
             user = random.choice(self.user)
 
