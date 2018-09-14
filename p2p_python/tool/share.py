@@ -139,7 +139,8 @@ class FileShare:
         threads = list()
         f_finish = [None] * num
         for n in range(num):
-            t = threading.Thread(target=self.__download, args=(request, f_finish, lock), name='FileShare')
+            t = threading.Thread(
+                target=self.__download, args=(request, f_finish, lock), name='FileShare', daemon=True)
             t.start()
             threads.append(t)
             time.sleep(1)

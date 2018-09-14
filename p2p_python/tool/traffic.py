@@ -14,7 +14,7 @@ class Traffic(Thread):
     f_finish = False
 
     def __init__(self, recode_dir=None, span=300, max_hours=24):
-        super().__init__(name='Traffic')
+        super().__init__(name='Traffic', daemon=True)
         self.data = collections.deque(maxlen=int(3600 * max_hours // span))
         self.recode_dir = recode_dir if recode_dir and os.path.exists(recode_dir) else None
         self.span = span  # 5min

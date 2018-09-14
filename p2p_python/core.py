@@ -28,7 +28,7 @@ class Core(Thread):
 
     def __init__(self, host='', listen=15, buffsize=2048):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
-        super().__init__(name='InnerCore')
+        super().__init__(name='InnerCore', daemon=True)
         self.start_time = int(time.time())
         self.number = 0
         self.user = list()
@@ -48,11 +48,10 @@ class Core(Thread):
         self.f_stop = True
         self.traffic.close()
         # Server/client のソケットを全て閉じる
+        for user in self.user:
+            self.remove_connection(user, 'Manually close.')
         try: self.server_sock.close()
         except: pass
-        for user in self.user:
-            try: user.sock.close()
-            except: pass
 
     def run(self):
         self.traffic.start()
@@ -68,7 +67,7 @@ class Core(Thread):
         while not self.f_stop:
             try:
                 sock, host_port = server_sock.accept()
-                Thread(target=self.__initial_connection_check, args=(sock, host_port)).start()
+                Thread(target=self.__initial_connection_check, args=(sock, host_port), daemon=True).start()
 
             except json.decoder.JSONDecodeError:
                 try: sock.close()
@@ -150,7 +149,7 @@ class Core(Thread):
             self.traffic.put_traffic_up(encrypted)
 
             Thread(target=self.__receive_msg,
-                   name='C:' + new_user.name, args=(new_user,)).start()
+                   name='C:' + new_user.name, args=(new_user,), daemon=True).start()
 
             c = 20
             while len(self.user) == 0 and c > 0:
@@ -257,7 +256,7 @@ class Core(Thread):
             logging.debug(e, exc_info=Debug.P_EXCEPTION)
         else:
             Thread(target=self.__receive_msg,
-                   name='S:'+new_user.name, args=(new_user,)).start()
+                   name='S:'+new_user.name, args=(new_user,), daemon=True).start()
             return
         # close socket
         try: sock.close()

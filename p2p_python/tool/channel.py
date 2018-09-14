@@ -110,7 +110,7 @@ class Channel(Thread):
     ping_pong_span = 60 * 5  # ユーザー死活監視間隔
 
     def __init__(self, pc, ch, seed=None):
-        super().__init__(name='1:Channel')
+        super().__init__(name='1:Channel', daemon=True)
         self.pc = pc
         self.ch = str(ch)
         # 秘密鍵、公開鍵　チェック
@@ -185,8 +185,8 @@ class Channel(Thread):
         broadcast_que = self.pc.broadcast_que.create()
         process_que = queue.LifoQueue()
         election_que = queue.LifoQueue()
-        Thread(target=self._process, name='2:Channel', args=(process_que,)).start()
-        Thread(target=self._election, name='3:Channel', args=(election_que,)).start()
+        Thread(target=self._process, name='2:Channel', args=(process_que,), daemon=True).start()
+        Thread(target=self._election, name='3:Channel', args=(election_que,), daemon=True).start()
         count = 0
         self.f_running = True
         while not self.f_stop:
@@ -357,7 +357,7 @@ class Channel(Thread):
             elif my_rank == candidate_rank:
                 logging.info("Accept as MasterNode %d" % my_rank)
                 self.members.make_master(self.ecc.pk)
-                Thread(target=self._master_work, name='5:Channel').start()
+                Thread(target=self._master_work, name='5:Channel', daemon=True).start()
                 # AES-KEYを新しくする
                 time.sleep(5)
                 new_aes = AESCipher.create_key()
@@ -472,7 +472,7 @@ class Channel(Thread):
     """ user api """
 
     def create_channel(self):
-        Thread(target=self._master_work, name='4:Channel').start()
+        Thread(target=self._master_work, name='4:Channel', daemon=True).start()
         self.members.put(self.ecc.pk, 0)
         self.aes_key.clear()
         logging.info("Join as master.")

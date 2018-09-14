@@ -60,7 +60,7 @@ def work():
         ch.start()
         ch.create_channel()
  
-    Thread(target=new_message, args=(ch.message_que.create(),)).start()
+    Thread(target=new_message, args=(ch.message_que.create(),), daemon=True).start()
     logging.info("PK=> {}".format(ch.ecc.pk))
     logging.info("Connect as {}".format(port))
  

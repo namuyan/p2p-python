@@ -117,10 +117,10 @@ class PeerClient:
         self.f_running = True
         self.p2p.start()
         if f_stabilize:
-            Thread(target=self.stabilize, name='Stabilize').start()
+            Thread(target=self.stabilize, name='Stabilize', daemon=True).start()
         # Processing
-        Thread(target=processing, name='Process').start()
-        Thread(target=broadcast, name="Broadcast").start()
+        Thread(target=processing, name='Process', daemon=True).start()
+        Thread(target=broadcast, name="Broadcast", daemon=True).start()
         logging.info("start user, name is {}, port is {}".format(V.SERVER_NAME, V.P2P_PORT))
 
     def type_request(self, user, item):
@@ -269,10 +269,10 @@ class PeerClient:
             file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
             # When you have file, sending. When you don't have file, asking
             if os.path.exists(file_path):
-                Thread(target=sending, name='Sending').start()
+                Thread(target=sending, name='Sending', daemon=True).start()
             elif V.F_FILE_CONTINUE_ASKING:
                 # Default disable
-                Thread(target=asking, name='Asking').start()
+                Thread(target=asking, name='Asking', daemon=True).start()
 
         elif item['cmd'] == ClientCmd.FILE_DELETE:
             item_ = item['data']
@@ -322,7 +322,7 @@ class PeerClient:
                 temperate['data'] = self.event.work(cmd=data['cmd'], data=data['data'])
                 self._send_msg(item=temperate, allows=[user])
             if 'cmd' in item['data'] and item['data']['cmd'] in self.event:
-                Thread(target=direct_cmd, name='DirectCmd').start()
+                Thread(target=direct_cmd, name='DirectCmd', daemon=True).start()
         else:
             pass
 
