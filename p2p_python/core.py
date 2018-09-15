@@ -8,6 +8,7 @@ import random
 import socket
 import time
 import zlib
+import select
 from threading import Thread, Lock
 from nem_ed25519.base import Encryption
 from .tool.traffic import Traffic
@@ -20,20 +21,19 @@ SERVER_SIDE = 'Server'
 CLIENT_SIDE = 'Client'
 
 
-class Core(Thread):
+class Core:
     f_stop = False
     f_finish = False
     f_running = False
     server_sock = None
 
-    def __init__(self, host='', listen=15, buffsize=2048):
+    def __init__(self, host=None, listen=15, buffsize=2048):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
-        super().__init__(name='InnerCore', daemon=True)
         self.start_time = int(time.time())
         self.number = 0
         self.user = list()
         self.lock = Lock()
-        self.host = host
+        self.host = host  # local=>'localhost', 'global'=>None
         self.ecc = Encryption()
         self.ecc.secret_key()
         self.ecc.public_key()
@@ -53,47 +53,68 @@ class Core(Thread):
         try: self.server_sock.close()
         except: pass
 
-    def run(self):
+    def start(self, s_family=socket.AF_UNSPEC):
+        def loop():
+            logging.info("Start {} servers".format(len(sockets)))
+            sock = server_sock = None
+            while not self.f_stop:
+                rfds = list(sockets)
+                rrdy, wrdy, err = select.select(rfds, list(), list(), 3)
+                try:
+                    for server_sock in rrdy:
+                        if server_sock in sockets:
+                            sock, host_port = server_sock.accept()
+                            Thread(target=self.__initial_connection_check,
+                                   args=(sock, host_port), daemon=True).start()
+                except TimeoutError:
+                    pass
+                except OSError as e:
+                    try: sock.close()
+                    except: pass
+                    logging.debug("OSError {}".format(e))
+                except Exception as e:
+                    try: sock.close()
+                    except: pass
+                    logging.debug(e, exc_info=Debug.P_EXCEPTION)
+            # out of loop
+            for sock in sockets:
+                try: sock.close()
+                except: pass
+            self.f_finish = True
+            self.f_running = False
+            logging.info("{} servers closed.".format(len(sockets)))
+
+        def create_server_socks():
+            for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_STREAM, 0, socket.AI_PASSIVE):
+                af, sock_type, proto, canon_name, sa = res
+                try:
+                    sock = socket.socket(af, sock_type, proto)
+                except OSError:
+                    continue
+                try:
+                    sock.bind(sa)
+                    sock.listen(self.listen)
+                except OSError as msg:
+                    sock.close()
+                    continue
+                if af == socket.AF_INET or af == socket.AF_INET6:
+                    sockets.append(sock)
+                    self.f_running = True
+                else:
+                    logging.warning("Not found socket type {}".format(af))
+            if not sockets:
+                logging.error('could not open sockets')
+            # Wait for connection
+            Thread(target=loop, name="InnerCore", daemon=True).start()
+
+        assert s_family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
         self.traffic.start()
         # Pooling connection
         if not V.P2P_ACCEPT:
             logging.info('You set p2p accept flag False.')
-            return
-
-        sock = host_port = None
-        server_sock = self.__create_server_sock()
-        logging.info("Start server %d" % V.P2P_PORT)
-        self.f_running = True
-        while not self.f_stop:
-            try:
-                sock, host_port = server_sock.accept()
-                Thread(target=self.__initial_connection_check, args=(sock, host_port), daemon=True).start()
-
-            except json.decoder.JSONDecodeError:
-                try: sock.close()
-                except: pass
-                logging.debug("JSONDecodeError by {}".format(host_port[0]))
-            except OSError as e:
-                try: sock.close()
-                except: pass
-                logging.debug("OSError {}".format(e))
-            except Exception as e:
-                try: sock.close()
-                except: pass
-                logging.debug(e, exc_info=Debug.P_EXCEPTION)
-        try: server_sock.close()
-        except: pass
-        self.f_finish = True
-        self.f_running = False
-        logging.info("Server closed.")
-
-    def __create_server_sock(self):
-        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_sock.bind((self.host, V.P2P_PORT))
-        server_sock.listen(self.listen)
-        self.server_sock = server_sock
-        return server_sock
+        # create server ipv4/ipv6
+        sockets = list()
+        create_server_socks()
 
     def get_server_header(self):
         return {
@@ -107,13 +128,25 @@ class Core(Thread):
     def create_connection(self, host, port):
         sock = host_port = None
         try:
-            host_port = (socket.gethostbyname(host), int(port))
-            if self.host_port2user(host_port) is not None:
-                return False  # Already connected.
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10)
-            # Connection
-            sock.connect(host_port)
+            for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
+                af, socktype, proto, canonname, host_port = res
+                try:
+                    sock = socket.socket(af, socktype, proto)
+                except OSError:
+                    continue
+                if self.host_port2user(host_port) is not None:
+                    continue  # Already connected.
+                sock.settimeout(10)
+                # Connection
+                try:
+                    sock.connect(host_port)
+                    break
+                except OSError:
+                    sock.close()
+                    continue
+            else:
+                # create no connection
+                return False
             # ヘッダーを送る
             send = json.dumps(self.get_server_header()).encode()
             with self.lock:
@@ -159,18 +192,17 @@ class Core(Thread):
                 return False
             else:
                 return True
+        except json.JSONDecodeError:
+            logging.debug("Json decode error.")
         except PeerToPeerError as e:
-            try: sock.close()
-            except: pass
             logging.debug("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
         except ConnectionRefusedError as e:
-            try: sock.close()
-            except: pass
             logging.debug("ConnectionRefusedError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
         except Exception as e:
-            try: sock.close()
-            except: pass
             logging.error("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
+        # close socket
+        try: sock.close()
+        except: pass
         return False
 
     def remove_connection(self, user, reason=None):

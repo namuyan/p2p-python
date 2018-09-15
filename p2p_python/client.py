@@ -10,6 +10,7 @@ import random
 import copy
 import queue
 import collections
+import socket
 from hashlib import sha256
 from threading import Thread, get_ident
 from nem_ed25519.base import Encryption
@@ -49,7 +50,7 @@ class PeerClient:
 
     def __init__(self, listen=15, f_local=False):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
-        self.p2p = Core(host='127.0.0.1' if f_local else '', listen=listen)
+        self.p2p = Core(host='localhost' if f_local else None, listen=listen)
         self.broadcast_que = QueueSystem()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self.__broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
@@ -65,7 +66,7 @@ class PeerClient:
         self.p2p.close()
         self.f_stop = True
 
-    def start(self, f_stabilize=True):
+    def start(self, s_family=socket.AF_UNSPEC, f_stabilize=True):
         processing_que = self.p2p.core_que.create()
         broadcast_que = queue.LifoQueue()
 
@@ -115,7 +116,7 @@ class PeerClient:
             logging.info("Close broadcast.")
 
         self.f_running = True
-        self.p2p.start()
+        self.p2p.start(s_family)
         if f_stabilize:
             Thread(target=self.stabilize, name='Stabilize', daemon=True).start()
         # Processing
@@ -543,7 +544,8 @@ class PeerClient:
         ignore_peers = {
             (GLOBAL_IP, V.P2P_PORT),
             (LOCAL_IP, V.P2P_PORT),
-            ('127.0.0.1', V.P2P_PORT)}
+            ('127.0.0.1', V.P2P_PORT),
+            ('::1', V.P2P_PORT)}
         if len(self.peers) == 0:
             logging.info("peer list is zero, need bootnode.")
         else:
