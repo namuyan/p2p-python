@@ -14,11 +14,3 @@ xmltodict
 requests
 pysocks
 nem-ed25519
-
-
-
-
-
-
-
-
