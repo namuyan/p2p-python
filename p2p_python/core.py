@@ -47,7 +47,7 @@ class Core:
         if not self.f_running:
             raise PeerToPeerError('Core is not running.')
         self.traffic.close()
-        for user in self.user:
+        for user in self.user.copy():
             self.remove_connection(user, 'Manually closing.')
         listen_sel.close()
         self.f_stop = True
@@ -204,13 +204,15 @@ class Core:
 
     def remove_connection(self, user, reason=None):
         with self.lock:
+            try: user.sock.close()
+            except: pass
             if user in self.user:
                 self.user.remove(user)
-                try: user.close()
-                except: pass
                 logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
                 return True
-            return False
+            else:
+                logging.debug("failed remove connection by \"{}\", not found {}".format(reason, user.name))
+                return False
 
     def send_msg_body(self, msg_body, user=None):
         assert type(msg_body) == bytes, 'msg_body is bytes'
@@ -305,7 +307,6 @@ class Core:
         while not self.f_stop:
             try:
                 if len(msg_prefix) == 0:
-
                     first_msg = user.sock.recv(self.buffsize)
                 else:
                     first_msg, msg_prefix = msg_prefix, b''
