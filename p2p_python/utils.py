@@ -53,11 +53,17 @@ def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, sub_dir=None, f_deb
 
 
 def is_reachable(host, port):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    result = sock.connect_ex((socket.gethostbyname(host), port))
-    if result == 0:
-        return True
+    for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
+        af, socktype, proto, canonname, host_port = res
+        try:
+            sock = socket.socket(af, socktype, proto)
+        except OSError:
+            continue
+        result = sock.connect_ex(host_port)
+        if result == 0:
+            return True
     else:
+        # create no connection
         return False
 
 

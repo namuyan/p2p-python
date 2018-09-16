@@ -128,7 +128,10 @@ class UpnpClient(threading.Thread):
     @staticmethod
     def get_global_ip():
         network_info_providers = [
-            "http://api.ipify.org/", 'http://myip.dnsomatic.com', 'http://inet-ip.info/ip'
+            'http://api.ipify.org/',
+            'http://myip.dnsomatic.com',
+            'http://inet-ip.info/ip',
+            'http://v4.ident.me/'
         ]
         random.shuffle(network_info_providers)
         for url in network_info_providers:
@@ -137,7 +140,25 @@ class UpnpClient(threading.Thread):
             except:
                 continue
         else:
-            raise Exception('cannot find global ip')
+            logging.info('cannot find global ip')
+            return ""
+
+    @staticmethod
+    def get_global_ip_ipv6():
+        network_info_providers = [
+            'http://v6.ipv6-test.com/api/myip.php',
+            'http://v6.ident.me/'
+        ]
+        random.shuffle(network_info_providers)
+        for url in network_info_providers:
+            try:
+                return requests.get(url).text.lstrip().rstrip()
+            except:
+                continue
+        else:
+            logging.info('cannot find global ipv6 ip')
+            return ""
+
 
     @staticmethod
     def cast_rooter_request(host='239.255.255.250', port=1900):
