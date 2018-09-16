@@ -577,12 +577,10 @@ class PeerClient:
         need_connection = 3
         while not self.f_stop:
             count += 1
-            if not (self.p2p.listen * 1 // 3 < len(self.p2p.user) < self.p2p.listen * 2 // 3):
-                time.sleep(5)
-            elif count < 5 and len(self.p2p.user) < need_connection:
-                time.sleep(2)
-            elif len(self.p2p.user) < need_connection:
+            if len(self.p2p.user) < need_connection:
                 sticky_nodes.clear()
+                time.sleep(2)
+            elif len(self.p2p.user) < self.p2p.listen // 3:
                 time.sleep(5)
             elif count % 24 == 1:
                 time.sleep(5 * (1 + random.random()))
@@ -696,6 +694,7 @@ class PeerClient:
                 logging.debug("ConnectionError {}".format(e))
             except Exception as e:
                 logging.debug("Stabilize {}".format(e), exc_info=True)
+        logging.error("Get out from loop of stabilize.")
 
     @staticmethod
     def broadcast_check(data):
