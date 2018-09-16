@@ -8,7 +8,7 @@ import random
 import socket
 import time
 import zlib
-import select
+import selectors
 from threading import Thread, Lock
 from nem_ed25519.base import Encryption
 from .tool.traffic import Traffic
@@ -20,12 +20,13 @@ from .user import User
 SERVER_SIDE = 'Server'
 CLIENT_SIDE = 'Client'
 
+listen_sel = selectors.DefaultSelector()
+
 
 class Core:
     f_stop = False
     f_finish = False
     f_running = False
-    server_sock = None
 
     def __init__(self, host=None, listen=15, buffsize=2048):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
@@ -47,42 +48,21 @@ class Core:
             raise PeerToPeerError('Core is not running.')
         self.f_stop = True
         self.traffic.close()
-        # Server/client のソケットを全て閉じる
-        for user in self.user:
-            self.remove_connection(user, 'Manually close.')
-        try: self.server_sock.close()
+        try: listen_sel.close()
         except: pass
+        self.user.clear()
 
     def start(self, s_family=socket.AF_UNSPEC):
-        def loop():
-            logging.info("Start {} servers".format(len(sockets)))
-            sock = server_sock = None
-            while not self.f_stop:
-                rfds = list(sockets)
-                rrdy, wrdy, err = select.select(rfds, list(), list(), 3)
-                try:
-                    for server_sock in rrdy:
-                        if server_sock in sockets:
-                            sock, host_port = server_sock.accept()
-                            Thread(target=self.__initial_connection_check,
-                                   args=(sock, host_port), daemon=True).start()
-                except TimeoutError:
-                    pass
-                except OSError as e:
-                    try: sock.close()
-                    except: pass
-                    logging.debug("OSError {}".format(e))
-                except Exception as e:
-                    try: sock.close()
-                    except: pass
-                    logging.debug(e, exc_info=Debug.P_EXCEPTION)
-            # out of loop
-            for sock in sockets:
-                try: sock.close()
-                except: pass
-            self.f_finish = True
-            self.f_running = False
-            logging.info("{} servers closed.".format(len(sockets)))
+        def server_listen(server_sock, mask):
+            try:
+                sock, host_port = server_sock.accept()
+                Thread(target=self.__initial_connection_check,
+                       args=(sock, host_port), daemon=True).start()
+                logging.info("New connection from {}".format(host_port))
+            except OSError as e:
+                logging.debug("OSError {}".format(e))
+            except Exception as e:
+                logging.debug(e, exc_info=Debug.P_EXCEPTION)
 
         def create_server_socks():
             for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_STREAM, 0, socket.AI_PASSIVE):
@@ -98,23 +78,33 @@ class Core:
                     sock.close()
                     continue
                 if af == socket.AF_INET or af == socket.AF_INET6:
-                    sockets.append(sock)
+                    listen_sel.register(sock, selectors.EVENT_READ, server_listen)
                     self.f_running = True
+                    logging.info("New server family={}".format(sock.family))
                 else:
                     logging.warning("Not found socket type {}".format(af))
-            if not sockets:
+            if len(listen_sel.get_map()) == 0:
                 logging.error('could not open sockets')
-            # Wait for connection
-            Thread(target=loop, name="InnerCore", daemon=True).start()
+
+        def listen_loop():
+            while not self.f_stop:
+                while len(listen_sel._readers) == 0:
+                    time.sleep(0.5)
+                events = listen_sel.select()
+                for key, mask in events:
+                    callback = key.data
+                    callback(key.fileobj, mask)
 
         assert s_family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
         self.traffic.start()
+        Thread(target=listen_loop, name='Listen', daemon=True).start()
         # Pooling connection
         if not V.P2P_ACCEPT:
             logging.info('You set p2p accept flag False.')
-        # create server ipv4/ipv6
-        sockets = list()
-        create_server_socks()
+        else:
+            # create server ipv4/ipv6
+            create_server_socks()
+        self.f_running = True
 
     def get_server_header(self):
         return {
