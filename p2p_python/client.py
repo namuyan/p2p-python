@@ -21,7 +21,8 @@ from .tool.utils import StackDict, EventIgnition, JsonDataBase, QueueSystem
 from .tool.upnpc import UpnpClient
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
-GLOBAL_IP = UpnpClient.get_global_ip()
+GLOBAL_IPV4 = UpnpClient.get_global_ip()
+GLOBAL_IPV6 = UpnpClient.get_global_ip_ipv6()
 STICKY_LIMIT = 2
 
 # Constant type
@@ -542,7 +543,8 @@ class PeerClient:
         time.sleep(5)
         logging.info("start stabilize.")
         ignore_peers = {
-            (GLOBAL_IP, V.P2P_PORT),
+            (GLOBAL_IPV4, V.P2P_PORT),
+            (GLOBAL_IPV6, V.P2P_PORT),
             (LOCAL_IP, V.P2P_PORT),
             ('127.0.0.1', V.P2P_PORT),
             ('::1', V.P2P_PORT)}

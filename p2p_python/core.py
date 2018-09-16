@@ -48,8 +48,13 @@ class Core:
             raise PeerToPeerError('Core is not running.')
         self.f_stop = True
         self.traffic.close()
-        try: listen_sel.close()
-        except: pass
+        for user in self.user:
+            try: user.sock.close()
+            except: pass
+        for sock in listen_sel._readers:
+            try: sock.close()
+            except: pass
+        listen_sel.close()
         self.user.clear()
 
     def start(self, s_family=socket.AF_UNSPEC):
@@ -58,7 +63,7 @@ class Core:
                 sock, host_port = server_sock.accept()
                 Thread(target=self.__initial_connection_check,
                        args=(sock, host_port), daemon=True).start()
-                logging.info("New connection from {}".format(host_port))
+                logging.info("Server accept from {}".format(host_port))
             except OSError as e:
                 logging.debug("OSError {}".format(e))
             except Exception as e:
@@ -80,7 +85,7 @@ class Core:
                 if af == socket.AF_INET or af == socket.AF_INET6:
                     listen_sel.register(sock, selectors.EVENT_READ, server_listen)
                     self.f_running = True
-                    logging.info("New server family={}".format(sock.family))
+                    logging.info("New server {} {}".format("IPV4" if sock.family == 2 else "IPV6", sa))
                 else:
                     logging.warning("Not found socket type {}".format(af))
             if len(listen_sel.get_map()) == 0:
