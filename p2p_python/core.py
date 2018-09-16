@@ -46,16 +46,11 @@ class Core:
     def close(self):
         if not self.f_running:
             raise PeerToPeerError('Core is not running.')
-        self.f_stop = True
         self.traffic.close()
         for user in self.user:
-            try: user.sock.close()
-            except: pass
-        for sock in listen_sel._readers:
-            try: sock.close()
-            except: pass
+            self.remove_connection(user, 'Manually closing.')
         listen_sel.close()
-        self.user.clear()
+        self.f_stop = True
 
     def start(self, s_family=socket.AF_UNSPEC):
         def server_listen(server_sock, mask):
@@ -74,13 +69,15 @@ class Core:
                 af, sock_type, proto, canon_name, sa = res
                 try:
                     sock = socket.socket(af, sock_type, proto)
-                except OSError:
+                except OSError as e:
+                    logging.debug("Failed socket.socket {}".format(sa))
                     continue
                 try:
                     sock.bind(sa)
                     sock.listen(self.listen)
-                except OSError as msg:
+                except OSError as e:
                     sock.close()
+                    logging.debug("Failed bind or listen {}".format(sa))
                     continue
                 if af == socket.AF_INET or af == socket.AF_INET6:
                     listen_sel.register(sock, selectors.EVENT_READ, server_listen)
@@ -90,15 +87,20 @@ class Core:
                     logging.warning("Not found socket type {}".format(af))
             if len(listen_sel.get_map()) == 0:
                 logging.error('could not open sockets')
+                V.P2P_ACCEPT = False
 
         def listen_loop():
             while not self.f_stop:
-                while len(listen_sel._readers) == 0:
-                    time.sleep(0.5)
-                events = listen_sel.select()
-                for key, mask in events:
-                    callback = key.data
-                    callback(key.fileobj, mask)
+                try:
+                    while len(listen_sel.get_map()) == 0:
+                        time.sleep(0.5)
+                    events = listen_sel.select()
+                    for key, mask in events:
+                        callback = key.data
+                        callback(key.fileobj, mask)
+                except BaseException as e:
+                    logging.error(e)
+                    time.sleep(30)
 
         assert s_family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
         self.traffic.start()
