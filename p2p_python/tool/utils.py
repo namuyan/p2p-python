@@ -289,7 +289,8 @@ class JsonDataBase:
     """
     まるでDictのように扱えて自動的にSaveしてくれる
     """
-    def __init__(self, path):
+    def __init__(self, path, remove_limit=3):
+        self.remove_limit = remove_limit
         self.path = path
         self.data = dict()
         self.load()
@@ -316,6 +317,14 @@ class JsonDataBase:
     def values(self):
         return self.data.values()
 
+    def remove(self, host_port):
+        with self.lock:
+            if host_port in self.data and \
+                    len(self.data) >= self.remove_limit:
+                del self.data[host_port]
+                return True
+        return False
+
     def __len__(self):
         return len(self.data)
 
@@ -331,8 +340,3 @@ class JsonDataBase:
             if key in self.data:
                 return self.data[key]
         return None
-
-    def __delitem__(self, key):
-        with self.lock:
-            if key in self.data:
-                del self.data[key]

@@ -57,7 +57,7 @@ class PeerClient:
         self.__broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
         self.__user2user_route = StackDict()
         self.__waiting_result = StackDict()
-        self.peers = JsonDataBase(path=os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
+        self.peers = JsonDataBase(os.path.join(V.DATA_PATH, 'peer.dat'), listen//2)  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
             self.p2p.traffic.recode_dir = V.TMP_PATH
@@ -557,14 +557,14 @@ class PeerClient:
             random.shuffle(peer_host_port)
             for host_port in peer_host_port:
                 if host_port in ignore_peers:
-                    del self.peers[host_port]
+                    self.peers.remove(host_port)
                     continue
                 header = self.peers[host_port]
                 if header['p2p_accept']:
                     if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
                         need -= 1
                     else:
-                        del self.peers[host_port]
+                        self.peers.remove(host_port)
                 if need <= 0:
                     break
                 else:
@@ -591,12 +591,12 @@ class PeerClient:
                 if len(self.p2p.user) == 0 and len(self.peers) > 0:
                     host_port = random.choice(list(self.peers.keys()))
                     if host_port in ignore_peers:
-                        del self.peers[host_port]
+                        self.peers.remove(host_port)
                         continue
                     if self.p2p.create_connection(host_port[0], host_port[1]):
                         time.sleep(5)
                     else:
-                        del self.peers[host_port]
+                        self.peers.remove(host_port)
                         continue
                 elif len(self.p2p.user) == 0 and len(self.peers) == 0:
                     time.sleep(10)
@@ -647,8 +647,8 @@ class PeerClient:
                         logging.debug("Remove connection %s:%d=%d" % (host_port[0], host_port[1], score))
                     else:
                         logging.debug("Failed remove connection. Already disconnected?")
-                        del self.peers[host_port]
-                        del user_score[host_port]
+                        if self.peers.remove(host_port):
+                            del user_score[host_port]
 
                 elif len(self.p2p.user) < self.p2p.listen * 2 // 3:  # Join
                     # スコア上位半分を取得
@@ -674,8 +674,8 @@ class PeerClient:
                     else:
                         logging.info("Failed connect, remove {}".format(host_port))
                         sticky_nodes[host_port] = sticky_nodes.get(host_port, 0) + 1
-                        del self.peers[host_port]
-                        del user_score[host_port]
+                        if self.peers.remove(host_port):
+                            del user_score[host_port]
 
                 elif len(self.p2p.user) > self.p2p.listen // 2 and random.random() < 0.01:
                     # Mutation

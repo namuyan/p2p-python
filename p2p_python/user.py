@@ -3,15 +3,13 @@ import time
 
 
 class User:
-    # header
-    name = None
-    client_ver = None
-    network_ver = None
-    p2p_accept = None
-    p2p_port = None
-    start_time = None
-
     def __init__(self, number, sock, host_port, aeskey, sock_type):
+        self.name = None
+        self.client_ver = None
+        self.network_ver = None
+        self.p2p_accept = None
+        self.p2p_port = None
+        self.start_time = None
         self.number = number
         self.sock = sock
         self.host_port = host_port
@@ -59,9 +57,3 @@ class User:
     def update_neers(self, items):
         # {(host,port): header, ..}
         self.neers = items
-
-    def add_warn(self):
-        self.warn += 1
-        if self.warn > 3:
-            try: self.sock.close()
-            except: pass
