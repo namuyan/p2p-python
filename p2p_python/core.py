@@ -56,7 +56,7 @@ class Core:
         def server_listen(server_sock, mask):
             try:
                 sock, host_port = server_sock.accept()
-                Thread(target=self.__initial_connection_check,
+                Thread(target=self._initial_connection_check,
                        args=(sock, host_port), daemon=True).start()
                 logging.info("Server accept from {}".format(host_port))
             except OSError as e:
@@ -131,8 +131,6 @@ class Core:
                     sock = socket.socket(af, socktype, proto)
                 except OSError:
                     continue
-                if self.host_port2user(host_port) is not None:
-                    continue  # Already connected.
                 sock.settimeout(10)
                 # Connection
                 try:
@@ -144,10 +142,10 @@ class Core:
             else:
                 # create no connection
                 return False
+            logging.debug("Success connection create to {}".format(host_port))
             # ヘッダーを送る
             send = json.dumps(self.get_server_header()).encode()
-            with self.lock:
-                sock.sendall(send)
+            sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を受取る
             receive = sock.recv(self.buffsize)
@@ -155,14 +153,14 @@ class Core:
             public_key = json.loads(receive.decode())['public-key']
             # 公開鍵を送る
             send = json.dumps({'public-key': self.ecc.pk}).encode()
-            with self.lock:
-                sock.sendall(send)
+            sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # AESKEYとヘッダーを取得し復号化する
             receive = sock.recv(self.buffsize)
             self.traffic.put_traffic_down(receive)
             data = json.loads(self.ecc.decrypt(sender_pk=public_key, enc=receive).decode())
             aeskey, header = data['aes-key'], data['header']
+            logging.debug("Success ase-key receive {}".format(host_port))
             # ユーザーを作成する
             with self.lock:
                 new_user = User(self.number, sock, host_port, aeskey, C.T_CLIENT)
@@ -174,11 +172,11 @@ class Core:
                 self.number += 1
             # Acceptシグナルを送る
             encrypted = AESCipher.encrypt(new_user.aeskey, b'accept')
-            with self.lock:
-                sock.sendall(encrypted)
+            sock.sendall(encrypted)
             self.traffic.put_traffic_up(encrypted)
 
-            Thread(target=self.__receive_msg,
+            logging.info("New connection to \"{}\" {}".format(new_user.name, new_user.get_host_port()))
+            Thread(target=self._receive_msg,
                    name='C:' + new_user.name, args=(new_user,), daemon=True).start()
 
             c = 20
@@ -204,6 +202,8 @@ class Core:
 
     def remove_connection(self, user, reason=None):
         with self.lock:
+            try: user.sock.shutdown()
+            except: pass
             try: user.sock.close()
             except: pass
             if user in self.user:
@@ -238,7 +238,7 @@ class Core:
         # logging.debug("Send {}Kb to '{}'".format(len(msg_len+msg_body) / 1000, user.name))
         return user
 
-    def __initial_connection_check(self, sock, host_port):
+    def _initial_connection_check(self, sock, host_port):
         sock.settimeout(10)
         try:
             # ヘッダーを受取る
@@ -248,16 +248,13 @@ class Core:
             with self.lock:
                 new_user = User(self.number, sock, host_port,
                                 aeskey=AESCipher.create_key(), sock_type=C.T_SERVER)
-                if self.host_port2user(new_user.get_host_port()) is not None:
-                    return  # Already connected.
                 self.number += 1
             new_user.deserialize(header)
             if new_user.name == V.SERVER_NAME:
                 raise ConnectionAbortedError('Same origin connection.')
             # こちらの公開鍵を送る
             send = json.dumps({'public-key': self.ecc.pk}).encode()
-            with self.lock:
-                sock.sendall(send)
+            sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を取得する
             receive = new_user.sock.recv(self.buffsize)
@@ -268,8 +265,7 @@ class Core:
             # AESKEYとHeaderを暗号化して送る
             encrypted = self.ecc.encrypt(recipient_pk=public_key, msg=json.dumps(
                 {'aes-key': new_user.aeskey, 'header': self.get_server_header()}).encode(), encode='raw')
-            with self.lock:
-                new_user.sock.sendall(encrypted)
+            new_user.sock.sendall(encrypted)
             self.traffic.put_traffic_up(encrypted)
             # Accept信号を受け取る
             encrypted = new_user.sock.recv(self.buffsize)
@@ -286,18 +282,34 @@ class Core:
         except Exception as e:
             logging.debug(e, exc_info=Debug.P_EXCEPTION)
         else:
-            Thread(target=self.__receive_msg,
+            logging.info("New connection from \"{}\" {}".format(new_user.name, new_user.get_host_port()))
+            Thread(target=self._receive_msg,
                    name='S:'+new_user.name, args=(new_user,), daemon=True).start()
             return
         # close socket
         try: sock.close()
         except: pass
 
-    def __receive_msg(self, user):
+    def _receive_msg(self, user):
         # Accept connection
         with self.lock:
+            for check_user in self.user.copy():
+                if check_user.name == user.name:
+                    if check_user.sock.fileno() == -1:
+                        status = self.remove_connection(check_user)
+                        logging.debug("Find dead sock remove={}".format(status))
+                    else:
+                        logging.debug("Already used name \"{}\"".format(check_user.name))
+                        try: user.sock.close()
+                        except: pass
+                        return
+            if self.host_port2user(user.get_host_port()) is not None:
+                logging.debug("Already connected, removed.")
+                try: user.sock.close()
+                except: pass
+                return  # Already connected.
             self.user.append(user)
-        logging.info("New connection from {}".format(user.name))
+        logging.info("Accept connection.")
 
         # pooling
         msg_prefix = b''

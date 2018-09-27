@@ -667,7 +667,7 @@ class PeerClient:
                     elif sticky_nodes.get(host_port, 0) > STICKY_LIMIT:
                         continue  # 接続不能回数大杉
                     elif host_port in ignore_peers:
-                        del self.peers[host_port]
+                        self.peers.remove(host_port)
                         continue
                     elif self.p2p.create_connection(host=host_port[0], port=host_port[1]):
                         logging.debug("New connection {}".format(host_port))
