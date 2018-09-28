@@ -22,6 +22,12 @@ class User:
         return "<User name={} start={}s warn={}>"\
             .format(self.name, int(time.time())-self.start_time, self.warn)
 
+    def close(self):
+        try: self.sock.shutdown()
+        except: pass
+        try: self.sock.close()
+        except: pass
+
     def getinfo(self):
         r = {
             'header': self.serialize(),

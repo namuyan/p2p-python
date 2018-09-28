@@ -28,7 +28,7 @@ class Core:
     f_finish = False
     f_running = False
 
-    def __init__(self, host=None, listen=15, buffsize=2048):
+    def __init__(self, host=None, listen=15, buffsize=4096):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
         self.start_time = int(time.time())
         self.number = 0
@@ -202,10 +202,7 @@ class Core:
 
     def remove_connection(self, user, reason=None):
         with self.lock:
-            try: user.sock.shutdown()
-            except: pass
-            try: user.sock.close()
-            except: pass
+            user.close()
             if user in self.user:
                 self.user.remove(user)
                 logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
@@ -214,8 +211,10 @@ class Core:
                 logging.debug("failed remove connection by \"{}\", not found {}".format(reason, user.name))
                 return False
 
-    def send_msg_body(self, msg_body, user=None):
+    def send_msg_body(self, msg_body, user=None, status=200):
+        # StatusCode: https://ja.wikipedia.org/wiki/HTTPステータスコード
         assert type(msg_body) == bytes, 'msg_body is bytes'
+        assert 200 <= status < 600, 'Not found status code {}'.format(status)
 
         # get client
         if len(self.user) == 0:
@@ -223,7 +222,7 @@ class Core:
         elif len(msg_body) > C.MAX_RECEIVE_SIZE + 5000:
             error = 'Max message size is {}kb (You try {}Kb)'.format(
                 round(C.MAX_RECEIVE_SIZE/1000000, 3), round(len(msg_body)/1000000, 3))
-            self.send_msg_body(msg_body=bjson.dumps(error), user=user)
+            self.send_msg_body(msg_body=bjson.dumps(error), user=user, status=500)
             raise ConnectionRefusedError(error)
         elif user is None:
             user = random.choice(self.user)
@@ -300,17 +299,20 @@ class Core:
                         logging.debug("Find dead sock remove={}".format(status))
                     else:
                         logging.debug("Already used name \"{}\"".format(check_user.name))
-                        try: user.sock.close()
-                        except: pass
+                        user.close()
                         return
-            if self.host_port2user(user.get_host_port()) is not None:
+            check_user = self.host_port2user(user.get_host_port())
+            if check_user is None:
+                pass
+            elif check_user.sock.fileno() == -1:
+                status = self.remove_connection(check_user)
+                logging.debug("Find dead sock remove={}".format(status))
+            else:
                 logging.debug("Already connected, removed.")
-                try: user.sock.close()
-                except: pass
+                user.close()
                 return  # Already connected.
             self.user.append(user)
-        logging.info("Accept connection.")
-
+            logging.info("Accept connection \"{}\"".format(user.name))
         # pooling
         msg_prefix = b''
         msg_len = 0
