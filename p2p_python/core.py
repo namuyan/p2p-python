@@ -210,7 +210,7 @@ class Core:
         with self.lock:
             try:
                 if reason:
-                    user.sock.sendall(str(reason).encode())
+                    user.sock.sendall(b'0000'+str(reason).encode())
             except:
                 pass
             user.close()
@@ -284,19 +284,23 @@ class Core:
             if receive != b'accept':
                 raise ConnectionAbortedError('Not accept signal.')
         except ConnectionAbortedError as e:
-            logging.debug(e)
+            error = "ConnectionAbortedError, {}".format(e)
         except json.decoder.JSONDecodeError:
-            pass
+            error = "JSONDecodeError"
         except socket.timeout:
-            pass
+            error = "socket.timeout"
         except Exception as e:
-            logging.debug(e, exc_info=Debug.P_EXCEPTION)
+            error = "Exception as {}".format(e)
         else:
             logging.info("New connection from \"{}\" {}".format(new_user.name, new_user.get_host_port()))
             Thread(target=self._receive_msg,
                    name='S:'+new_user.name, args=(new_user,), daemon=True).start()
             return
         # close socket
+        error = "Close on initial check " + error
+        logging.debug(error)
+        try: sock.sendall(error.encode())
+        except: pass
         try: sock.close()
         except: pass
 
@@ -320,6 +324,7 @@ class Core:
                 if len(msg_prefix) == 0:
                     user.sock.settimeout(3600)
                     first_msg = user.sock.recv(self.buffsize)
+                    user.sock.settimeout(10)
                 else:
                     first_msg, msg_prefix = msg_prefix, b''
 
@@ -342,8 +347,6 @@ class Core:
                     msg_body = zlib.decompress(msg_body)
                     self.core_que.broadcast((user, msg_body))
                     continue
-                else:
-                    user.sock.settimeout(5)
 
                 # continue receiving message
                 while True:
