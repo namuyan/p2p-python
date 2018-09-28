@@ -207,10 +207,12 @@ class Core:
         return False
 
     def remove_connection(self, user, reason=None):
+        if user is None:
+            return False
         with self.lock:
             try:
                 if reason:
-                    user.sock.sendall(b'0000'+str(reason).encode())
+                    user.sock.sendall(b'1111'+str(reason).encode())
             except:
                 pass
             user.close()
@@ -370,8 +372,8 @@ class Core:
         except socket.timeout:
             error = "socket timeout {}".format(user.name)
             logging.debug(error)
-        except ConnectionAbortedError:
-            error = "ConnectionAbortedError :len={}, msg={}".format(msg_len, msg_body)
+        except ConnectionAbortedError as e:
+            error = "ConnectionAbortedError :len={}, msg={} e={}".format(msg_len, msg_body, e)
         except ConnectionResetError:
             error = "ConnectionResetError by {}".format(user.name)
         except OSError as e:
