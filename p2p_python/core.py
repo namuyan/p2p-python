@@ -308,7 +308,8 @@ class Core:
                 status = self.remove_connection(check_user)
                 logging.debug("Find dead sock remove={}".format(status))
             else:
-                logging.debug("Already connected, removed.")
+                logging.debug("Already connected {}".format(check_user))
+                logging.debug("Remove connection {}".format(user))
                 user.close()
                 return  # Already connected.
             self.user.append(user)

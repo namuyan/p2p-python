@@ -577,16 +577,13 @@ class PeerClient:
         need_connection = 3
         while not self.f_stop:
             count += 1
-            if len(self.p2p.user) < need_connection:
-                sticky_nodes.clear()
-                time.sleep(2)
-            elif len(self.p2p.user) < self.p2p.listen // 3:
-                time.sleep(5)
-            elif count % 24 == 1:
-                time.sleep(5 * (1 + random.random()))
+            if len(self.p2p.user) <= need_connection:
+                time.sleep(3)
             else:
-                time.sleep(5)
-                continue
+                time.sleep(1.5 * (1 + random.random()) * len(self.p2p.user))
+            if count % 24 == 1 and len(sticky_nodes) > 0:
+                logging.debug("Clean sticky_nodes. [{}=>0]".format(len(sticky_nodes)))
+                sticky_nodes.clear()
             try:
                 if len(self.p2p.user) == 0 and len(self.peers) > 0:
                     host_port = random.choice(list(self.peers.keys()))

@@ -19,8 +19,8 @@ class User:
         self.warn = 0
 
     def __repr__(self):
-        return "<User name={} start={}s warn={}>"\
-            .format(self.name, int(time.time())-self.start_time, self.warn)
+        return "<User {} {}s {} warn{}>"\
+            .format(self.name, int(time.time())-self.start_time, (self.host_port[0], self.p2p_port), self.warn)
 
     def close(self):
         try: self.sock.shutdown()
