@@ -1,6 +1,7 @@
 from .config import C, V, PeerToPeerError
 import time
 import socket
+from threading import Lock
 
 
 class User:
@@ -18,6 +19,7 @@ class User:
         self.sock_type = sock_type
         self.neers = dict()
         self.warn = 0
+        self.lock = Lock()
 
     def __repr__(self):
         return "<User {} {}s {} warn{}>"\
@@ -28,6 +30,10 @@ class User:
         except: pass
         try: self.sock.close()
         except: pass
+
+    def send(self, msg):
+        with self.lock:
+            self.sock.sendall(msg)
 
     def getinfo(self):
         r = {

@@ -209,20 +209,20 @@ class Core:
     def remove_connection(self, user, reason=None):
         if user is None:
             return False
-        with self.lock:
-            try:
-                if reason:
-                    user.sock.sendall(b'1111'+str(reason).encode())
-            except:
-                pass
-            user.close()
-            if user in self.user:
+        try:
+            if reason:
+                user.send(b'1111'+str(reason).encode())
+        except:
+            pass
+        user.close()
+        if user in self.user.copy():
+            with self.lock:
                 self.user.remove(user)
-                logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
-                return True
-            else:
-                logging.debug("failed remove connection by \"{}\", not found {}".format(reason, user.name))
-                return False
+            logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
+            return True
+        else:
+            logging.debug("failed remove connection by \"{}\", not found {}".format(reason, user.name))
+            return False
 
     def send_msg_body(self, msg_body, user=None, status=200):
         # StatusCode: https://ja.wikipedia.org/wiki/HTTPステータスコード
@@ -244,8 +244,7 @@ class Core:
         msg_body = zlib.compress(msg_body)
         msg_body = AESCipher.encrypt(key=user.aeskey, raw=msg_body)
         msg_len = len(msg_body).to_bytes(4, 'big')
-        with self.lock:
-            user.sock.sendall(msg_len + msg_body)
+        user.send(msg_len + msg_body)
         self.traffic.put_traffic_up(msg_len + msg_body)
         # logging.debug("Send {}Kb to '{}'".format(len(msg_len+msg_body) / 1000, user.name))
         return user
@@ -277,7 +276,7 @@ class Core:
             # AESKEYとHeaderを暗号化して送る
             encrypted = self.ecc.encrypt(recipient_pk=public_key, msg=json.dumps(
                 {'aes-key': new_user.aeskey, 'header': self.get_server_header()}).encode(), encode='raw')
-            new_user.sock.sendall(encrypted)
+            new_user.send(encrypted)
             self.traffic.put_traffic_up(encrypted)
             # Accept信号を受け取る
             encrypted = new_user.sock.recv(self.buffsize)
@@ -308,14 +307,15 @@ class Core:
 
     def _receive_msg(self, user):
         # Accept connection
+        check_user = self.host_port2user(user.get_host_port())
+        if check_user:
+            error = "Replaced by new connection {}".format(user)
+            self.remove_connection(check_user, error)
+            logging.info(error)
         with self.lock:
-            check_user = self.host_port2user(user.get_host_port())
-            if check_user:
-                error = "Replaced by new connection {}".format(user)
-                self.remove_connection(check_user, error)
-                logging.info(error)
             self.user.append(user)
-            logging.info("Accept connection \"{}\"".format(user.name))
+        logging.info("Accept connection \"{}\"".format(user.name))
+
         # pooling
         msg_prefix = b''
         msg_len = 0
