@@ -1,5 +1,6 @@
 from .config import C, V, PeerToPeerError
 import time
+import socket
 
 
 class User:
@@ -23,7 +24,7 @@ class User:
             .format(self.name, int(time.time())-self.start_time, (self.host_port[0], self.p2p_port), self.warn)
 
     def close(self):
-        try: self.sock.shutdown()
+        try: self.sock.shutdown(socket.SHUT_RDWR)
         except: pass
         try: self.sock.close()
         except: pass

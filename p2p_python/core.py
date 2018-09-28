@@ -188,20 +188,31 @@ class Core:
             else:
                 return True
         except json.JSONDecodeError:
-            logging.debug("Json decode error.")
+            error = "Json decode error."
         except PeerToPeerError as e:
-            logging.debug("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
+            error = "NewConnectionError {} {}".format(host_port, e)
         except ConnectionRefusedError as e:
-            logging.debug("ConnectionRefusedError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
+            error = "ConnectionRefusedError {} {}".format(host_port, e)
         except Exception as e:
-            logging.error("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
+            error = "NewConnectionError {} {}".format(host_port, e)
+
         # close socket
+        logging.debug(error)
+        try: sock.sendall(error.encode())
+        except: pass
+        try: sock.shutdown(socket.SHUT_RDWR)
+        except: pass
         try: sock.close()
         except: pass
         return False
 
     def remove_connection(self, user, reason=None):
         with self.lock:
+            try:
+                if reason:
+                    user.sock.sendall(str(reason).encode())
+            except:
+                pass
             user.close()
             if user in self.user:
                 self.user.remove(user)
@@ -292,36 +303,22 @@ class Core:
     def _receive_msg(self, user):
         # Accept connection
         with self.lock:
-            for check_user in self.user.copy():
-                if check_user.name == user.name:
-                    if check_user.sock.fileno() == -1:
-                        status = self.remove_connection(check_user)
-                        logging.debug("Find dead sock remove={}".format(status))
-                    else:
-                        logging.debug("Already used name \"{}\"".format(check_user.name))
-                        user.close()
-                        return
             check_user = self.host_port2user(user.get_host_port())
-            if check_user is None:
-                pass
-            elif check_user.sock.fileno() == -1:
-                status = self.remove_connection(check_user)
-                logging.debug("Find dead sock remove={}".format(status))
-            else:
-                logging.debug("Already connected {}".format(check_user))
-                logging.debug("Remove connection {}".format(user))
-                user.close()
-                return  # Already connected.
+            if check_user:
+                error = "Replaced by new connection {}".format(user)
+                self.remove_connection(check_user, error)
+                logging.info(error)
             self.user.append(user)
             logging.info("Accept connection \"{}\"".format(user.name))
         # pooling
         msg_prefix = b''
         msg_len = 0
         msg_body = b''
-        user.sock.settimeout(3600)
-        while not self.f_stop:
-            try:
+        error = None
+        try:
+            while not self.f_stop:
                 if len(msg_prefix) == 0:
+                    user.sock.settimeout(3600)
                     first_msg = user.sock.recv(self.buffsize)
                 else:
                     first_msg, msg_prefix = msg_prefix, b''
@@ -346,7 +343,7 @@ class Core:
                     self.core_que.broadcast((user, msg_body))
                     continue
                 else:
-                    pass
+                    user.sock.settimeout(5)
 
                 # continue receiving message
                 while True:
@@ -367,25 +364,21 @@ class Core:
                     else:
                         continue
 
-            except socket.timeout:
-                logging.debug("socket timeout {}".format(user.name))
-                break
-            except ConnectionAbortedError:
-                logging.debug("1ConnectionAbortedError", exc_info=Debug.P_EXCEPTION)
-                logging.debug("2ConnectionAbortedError :len={}, msg={}".format(msg_len, msg_body))
-                break
-            except ConnectionResetError:
-                logging.debug("ConnectionResetError by {}".format(user.name), exc_info=Debug.P_EXCEPTION)
-                break
-            except OSError as e:
-                logging.debug("OSError by {}, {}".format(user.name, e), exc_info=Debug.P_EXCEPTION)
-                break
-            except Exception as e:
-                logging.debug("BaseException by {}, {}".format(user.name, e), exc_info=Debug.P_EXCEPTION)
-                break
+        except socket.timeout:
+            error = "socket timeout {}".format(user.name)
+            logging.debug(error)
+        except ConnectionAbortedError:
+            error = "ConnectionAbortedError :len={}, msg={}".format(msg_len, msg_body)
+        except ConnectionResetError:
+            error = "ConnectionResetError by {}".format(user.name)
+        except OSError as e:
+            error = "OSError by {}, {}".format(user.name, e)
+        except Exception as e:
+            error = "BaseException by {}, {}".format(user.name, e)
 
         # raised exception on loop
-        if not self.remove_connection(user):
+        logging.debug(error)
+        if not self.remove_connection(user, error):
             logging.debug("Failed remove user {}".format(user.name))
 
     def name2user(self, name):
