@@ -9,7 +9,7 @@ import socket
 import time
 import zlib
 import selectors
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 from nem_ed25519.base import Encryption
 from .tool.traffic import Traffic
 from .tool.utils import AESCipher, QueueSystem
@@ -42,6 +42,8 @@ class Core:
         self.listen = listen
         self.buffsize = buffsize
         self.traffic = Traffic()
+        self._ping = Event()
+        self._ping.set()
 
     def close(self):
         if not self.f_running:
@@ -51,6 +53,19 @@ class Core:
             self.remove_connection(user, 'Manually closing.')
         listen_sel.close()
         self.f_stop = True
+
+    def ping(self, user: User):
+        try:
+            self._ping.wait(10)
+            self._ping.clear()
+            self.send_msg_body(b'Ping', user)
+            r = self._ping.wait(9)
+            self._ping.set()
+            return r
+        except Exception as e:
+            logging.debug("Failed ping by {}".format(e))
+            self._ping.set()
+            return False
 
     def start(self, s_family=socket.AF_UNSPEC):
         def server_listen(server_sock, mask):
@@ -309,9 +324,10 @@ class Core:
         # Accept connection
         check_user = self.host_port2user(user.get_host_port())
         if check_user:
-            error = "Replaced by new connection {}".format(user)
-            self.remove_connection(check_user, error)
-            logging.info(error)
+            if not self.ping(check_user):
+                error = "Failed ping, Replace new connection {} => {}".format(check_user, user)
+                self.remove_connection(check_user, error)
+                logging.info(error)
         with self.lock:
             self.user.append(user)
         logging.info("Accept connection \"{}\"".format(user.name))
@@ -347,7 +363,16 @@ class Core:
                     self.traffic.put_traffic_down(msg_body)
                     msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                     msg_body = zlib.decompress(msg_body)
-                    self.core_que.broadcast((user, msg_body))
+                    if msg_body == b'Ping':
+                        logging.debug("receive ping from {}".format(user.name))
+                        self.send_msg_body(b'Pong', user)
+                        continue
+                    elif msg_body == b'Pong':
+                        logging.debug("receive Pong from {}".format(user.name))
+                        self._ping.set()
+                        continue
+                    else:
+                        self.core_que.broadcast((user, msg_body))
                     continue
 
                 # continue receiving message

@@ -340,3 +340,7 @@ class JsonDataBase:
             if key in self.data:
                 return self.data[key]
         return None
+
+
+def version2int(v):
+    return sum([pow(1000, i) * int(d) for i, d in enumerate(reversed(v.split('.')))])
