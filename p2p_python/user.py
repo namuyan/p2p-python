@@ -1,17 +1,17 @@
 from .config import C, V, PeerToPeerError
 import time
+import socket
+from threading import Lock
 
 
 class User:
-    # header
-    name = None
-    client_ver = None
-    network_ver = None
-    p2p_accept = None
-    p2p_port = None
-    start_time = None
-
     def __init__(self, number, sock, host_port, aeskey, sock_type):
+        self.name = None
+        self.client_ver = None
+        self.network_ver = None
+        self.p2p_accept = None
+        self.p2p_port = None
+        self.start_time = None
         self.number = number
         self.sock = sock
         self.host_port = host_port
@@ -19,10 +19,21 @@ class User:
         self.sock_type = sock_type
         self.neers = dict()
         self.warn = 0
+        self.lock = Lock()
 
     def __repr__(self):
-        return "<User name={} start={}s warn={}>"\
-            .format(self.name, int(time.time())-self.start_time, self.warn)
+        return "<User {} {}s {} warn{}>"\
+            .format(self.name, int(time.time())-self.start_time, (self.host_port[0], self.p2p_port), self.warn)
+
+    def close(self):
+        try: self.sock.shutdown(socket.SHUT_RDWR)
+        except: pass
+        try: self.sock.close()
+        except: pass
+
+    def send(self, msg):
+        with self.lock:
+            self.sock.sendall(msg)
 
     def getinfo(self):
         r = {
@@ -59,9 +70,3 @@ class User:
     def update_neers(self, items):
         # {(host,port): header, ..}
         self.neers = items
-
-    def add_warn(self):
-        self.warn += 1
-        if self.warn > 3:
-            try: self.sock.close()
-            except: pass

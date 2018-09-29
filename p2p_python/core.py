@@ -9,7 +9,7 @@ import socket
 import time
 import zlib
 import selectors
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 from nem_ed25519.base import Encryption
 from .tool.traffic import Traffic
 from .tool.utils import AESCipher, QueueSystem
@@ -28,7 +28,7 @@ class Core:
     f_finish = False
     f_running = False
 
-    def __init__(self, host=None, listen=15, buffsize=2048):
+    def __init__(self, host=None, listen=15, buffsize=4096):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
         self.start_time = int(time.time())
         self.number = 0
@@ -42,6 +42,8 @@ class Core:
         self.listen = listen
         self.buffsize = buffsize
         self.traffic = Traffic()
+        self._ping = Event()
+        self._ping.set()
 
     def close(self):
         if not self.f_running:
@@ -52,11 +54,24 @@ class Core:
         listen_sel.close()
         self.f_stop = True
 
+    def ping(self, user: User):
+        try:
+            self._ping.wait(10)
+            self._ping.clear()
+            self.send_msg_body(b'Ping', user)
+            r = self._ping.wait(9)
+            self._ping.set()
+            return r
+        except Exception as e:
+            logging.debug("Failed ping by {}".format(e))
+            self._ping.set()
+            return False
+
     def start(self, s_family=socket.AF_UNSPEC):
         def server_listen(server_sock, mask):
             try:
                 sock, host_port = server_sock.accept()
-                Thread(target=self.__initial_connection_check,
+                Thread(target=self._initial_connection_check,
                        args=(sock, host_port), daemon=True).start()
                 logging.info("Server accept from {}".format(host_port))
             except OSError as e:
@@ -131,8 +146,6 @@ class Core:
                     sock = socket.socket(af, socktype, proto)
                 except OSError:
                     continue
-                if self.host_port2user(host_port) is not None:
-                    continue  # Already connected.
                 sock.settimeout(10)
                 # Connection
                 try:
@@ -144,10 +157,10 @@ class Core:
             else:
                 # create no connection
                 return False
+            logging.debug("Success connection create to {}".format(host_port))
             # ヘッダーを送る
             send = json.dumps(self.get_server_header()).encode()
-            with self.lock:
-                sock.sendall(send)
+            sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を受取る
             receive = sock.recv(self.buffsize)
@@ -155,14 +168,14 @@ class Core:
             public_key = json.loads(receive.decode())['public-key']
             # 公開鍵を送る
             send = json.dumps({'public-key': self.ecc.pk}).encode()
-            with self.lock:
-                sock.sendall(send)
+            sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # AESKEYとヘッダーを取得し復号化する
             receive = sock.recv(self.buffsize)
             self.traffic.put_traffic_down(receive)
             data = json.loads(self.ecc.decrypt(sender_pk=public_key, enc=receive).decode())
             aeskey, header = data['aes-key'], data['header']
+            logging.debug("Success ase-key receive {}".format(host_port))
             # ユーザーを作成する
             with self.lock:
                 new_user = User(self.number, sock, host_port, aeskey, C.T_CLIENT)
@@ -174,11 +187,11 @@ class Core:
                 self.number += 1
             # Acceptシグナルを送る
             encrypted = AESCipher.encrypt(new_user.aeskey, b'accept')
-            with self.lock:
-                sock.sendall(encrypted)
+            sock.sendall(encrypted)
             self.traffic.put_traffic_up(encrypted)
 
-            Thread(target=self.__receive_msg,
+            logging.info("New connection to \"{}\" {}".format(new_user.name, new_user.get_host_port()))
+            Thread(target=self._receive_msg,
                    name='C:' + new_user.name, args=(new_user,), daemon=True).start()
 
             c = 20
@@ -190,32 +203,46 @@ class Core:
             else:
                 return True
         except json.JSONDecodeError:
-            logging.debug("Json decode error.")
+            error = "Json decode error."
         except PeerToPeerError as e:
-            logging.debug("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
+            error = "NewConnectionError {} {}".format(host_port, e)
         except ConnectionRefusedError as e:
-            logging.debug("ConnectionRefusedError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
+            error = "ConnectionRefusedError {} {}".format(host_port, e)
         except Exception as e:
-            logging.error("NewConnectionError {} {}".format(host_port, e), exc_info=Debug.P_EXCEPTION)
+            error = "NewConnectionError {} {}".format(host_port, e)
+
         # close socket
+        logging.debug(error)
+        try: sock.sendall(error.encode())
+        except: pass
+        try: sock.shutdown(socket.SHUT_RDWR)
+        except: pass
         try: sock.close()
         except: pass
         return False
 
     def remove_connection(self, user, reason=None):
-        with self.lock:
-            try: user.sock.close()
-            except: pass
-            if user in self.user:
+        if user is None:
+            return False
+        try:
+            if reason:
+                user.send(b'1111'+str(reason).encode())
+        except:
+            pass
+        user.close()
+        if user in self.user.copy():
+            with self.lock:
                 self.user.remove(user)
-                logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
-                return True
-            else:
-                logging.debug("failed remove connection by \"{}\", not found {}".format(reason, user.name))
-                return False
+            logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
+            return True
+        else:
+            logging.debug("failed remove connection by \"{}\", not found {}".format(reason, user.name))
+            return False
 
-    def send_msg_body(self, msg_body, user=None):
+    def send_msg_body(self, msg_body, user=None, status=200):
+        # StatusCode: https://ja.wikipedia.org/wiki/HTTPステータスコード
         assert type(msg_body) == bytes, 'msg_body is bytes'
+        assert 200 <= status < 600, 'Not found status code {}'.format(status)
 
         # get client
         if len(self.user) == 0:
@@ -223,7 +250,7 @@ class Core:
         elif len(msg_body) > C.MAX_RECEIVE_SIZE + 5000:
             error = 'Max message size is {}kb (You try {}Kb)'.format(
                 round(C.MAX_RECEIVE_SIZE/1000000, 3), round(len(msg_body)/1000000, 3))
-            self.send_msg_body(msg_body=bjson.dumps(error), user=user)
+            self.send_msg_body(msg_body=bjson.dumps(error), user=user, status=500)
             raise ConnectionRefusedError(error)
         elif user is None:
             user = random.choice(self.user)
@@ -232,13 +259,12 @@ class Core:
         msg_body = zlib.compress(msg_body)
         msg_body = AESCipher.encrypt(key=user.aeskey, raw=msg_body)
         msg_len = len(msg_body).to_bytes(4, 'big')
-        with self.lock:
-            user.sock.sendall(msg_len + msg_body)
+        user.send(msg_len + msg_body)
         self.traffic.put_traffic_up(msg_len + msg_body)
         # logging.debug("Send {}Kb to '{}'".format(len(msg_len+msg_body) / 1000, user.name))
         return user
 
-    def __initial_connection_check(self, sock, host_port):
+    def _initial_connection_check(self, sock, host_port):
         sock.settimeout(10)
         try:
             # ヘッダーを受取る
@@ -248,16 +274,13 @@ class Core:
             with self.lock:
                 new_user = User(self.number, sock, host_port,
                                 aeskey=AESCipher.create_key(), sock_type=C.T_SERVER)
-                if self.host_port2user(new_user.get_host_port()) is not None:
-                    return  # Already connected.
                 self.number += 1
             new_user.deserialize(header)
             if new_user.name == V.SERVER_NAME:
                 raise ConnectionAbortedError('Same origin connection.')
             # こちらの公開鍵を送る
             send = json.dumps({'public-key': self.ecc.pk}).encode()
-            with self.lock:
-                sock.sendall(send)
+            sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を取得する
             receive = new_user.sock.recv(self.buffsize)
@@ -268,8 +291,7 @@ class Core:
             # AESKEYとHeaderを暗号化して送る
             encrypted = self.ecc.encrypt(recipient_pk=public_key, msg=json.dumps(
                 {'aes-key': new_user.aeskey, 'header': self.get_server_header()}).encode(), encode='raw')
-            with self.lock:
-                new_user.sock.sendall(encrypted)
+            new_user.send(encrypted)
             self.traffic.put_traffic_up(encrypted)
             # Accept信号を受け取る
             encrypted = new_user.sock.recv(self.buffsize)
@@ -278,36 +300,49 @@ class Core:
             if receive != b'accept':
                 raise ConnectionAbortedError('Not accept signal.')
         except ConnectionAbortedError as e:
-            logging.debug(e)
+            error = "ConnectionAbortedError, {}".format(e)
         except json.decoder.JSONDecodeError:
-            pass
+            error = "JSONDecodeError"
         except socket.timeout:
-            pass
+            error = "socket.timeout"
         except Exception as e:
-            logging.debug(e, exc_info=Debug.P_EXCEPTION)
+            error = "Exception as {}".format(e)
         else:
-            Thread(target=self.__receive_msg,
+            logging.info("New connection from \"{}\" {}".format(new_user.name, new_user.get_host_port()))
+            Thread(target=self._receive_msg,
                    name='S:'+new_user.name, args=(new_user,), daemon=True).start()
             return
         # close socket
+        error = "Close on initial check " + error
+        logging.debug(error)
+        try: sock.sendall(error.encode())
+        except: pass
         try: sock.close()
         except: pass
 
-    def __receive_msg(self, user):
+    def _receive_msg(self, user):
         # Accept connection
+        check_user = self.host_port2user(user.get_host_port())
+        if check_user:
+            if not self.ping(check_user):
+                error = "Failed ping, Replace new connection {} => {}".format(check_user, user)
+                self.remove_connection(check_user, error)
+                logging.info(error)
         with self.lock:
             self.user.append(user)
-        logging.info("New connection from {}".format(user.name))
+        logging.info("Accept connection \"{}\"".format(user.name))
 
         # pooling
         msg_prefix = b''
         msg_len = 0
         msg_body = b''
-        user.sock.settimeout(3600)
-        while not self.f_stop:
-            try:
+        error = None
+        try:
+            while not self.f_stop:
                 if len(msg_prefix) == 0:
+                    user.sock.settimeout(3600)
                     first_msg = user.sock.recv(self.buffsize)
+                    user.sock.settimeout(10)
                 else:
                     first_msg, msg_prefix = msg_prefix, b''
 
@@ -328,10 +363,17 @@ class Core:
                     self.traffic.put_traffic_down(msg_body)
                     msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                     msg_body = zlib.decompress(msg_body)
-                    self.core_que.broadcast((user, msg_body))
+                    if msg_body == b'Ping':
+                        logging.debug("receive ping from {}".format(user.name))
+                        self.send_msg_body(b'Pong', user)
+                        continue
+                    elif msg_body == b'Pong':
+                        logging.debug("receive Pong from {}".format(user.name))
+                        self._ping.set()
+                        continue
+                    else:
+                        self.core_que.broadcast((user, msg_body))
                     continue
-                else:
-                    pass
 
                 # continue receiving message
                 while True:
@@ -352,25 +394,21 @@ class Core:
                     else:
                         continue
 
-            except socket.timeout:
-                logging.debug("socket timeout {}".format(user.name))
-                break
-            except ConnectionAbortedError:
-                logging.debug("1ConnectionAbortedError", exc_info=Debug.P_EXCEPTION)
-                logging.debug("2ConnectionAbortedError :len={}, msg={}".format(msg_len, msg_body))
-                break
-            except ConnectionResetError:
-                logging.debug("ConnectionResetError by {}".format(user.name), exc_info=Debug.P_EXCEPTION)
-                break
-            except OSError as e:
-                logging.debug("OSError by {}, {}".format(user.name, e), exc_info=Debug.P_EXCEPTION)
-                break
-            except Exception as e:
-                logging.debug("BaseException by {}, {}".format(user.name, e), exc_info=Debug.P_EXCEPTION)
-                break
+        except socket.timeout:
+            error = "socket timeout {}".format(user.name)
+            logging.debug(error)
+        except ConnectionAbortedError as e:
+            error = "ConnectionAbortedError :len={}, msg={} e={}".format(msg_len, msg_body, e)
+        except ConnectionResetError:
+            error = "ConnectionResetError by {}".format(user.name)
+        except OSError as e:
+            error = "OSError by {}, {}".format(user.name, e)
+        except Exception as e:
+            error = "BaseException by {}, {}".format(user.name, e)
 
         # raised exception on loop
-        if not self.remove_connection(user):
+        logging.debug(error)
+        if not self.remove_connection(user, error):
             logging.debug("Failed remove user {}".format(user.name))
 
     def name2user(self, name):
