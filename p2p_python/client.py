@@ -135,6 +135,7 @@ class PeerClient:
         allow_list = list()
         deny_list = list()
         ack_list = list()
+        f_udp = False
 
         if item['cmd'] == ClientCmd.PING_PONG:
             temperate['data'] = {
@@ -161,6 +162,7 @@ class PeerClient:
                 # send Response
                 temperate['type'] = T_REQUEST
                 temperate['data'] = item['data']
+                f_udp = True
 
         elif item['cmd'] == ClientCmd.GET_PEER_INFO:
             # [[(host,port), header],..]
@@ -329,7 +331,7 @@ class PeerClient:
             pass
 
         # send message
-        send_count = self._send_msg(item=temperate, allows=allow_list, denys=deny_list)
+        send_count = self._send_msg(item=temperate, allows=allow_list, denys=deny_list, f_udp=f_udp)
         # send ack
         ack_count = 0
         if len(ack_list) > 0:
@@ -370,7 +372,7 @@ class PeerClient:
                 que.put((user, data))
             # logging.debug("Get ack from {}".format(user.name))
 
-    def _send_msg(self, item, allows=None, denys=None):
+    def _send_msg(self, item, allows=None, denys=None, f_udp=False):
         msg_body = bjson.dumps(item)
         if allows is None:
             allows = self.p2p.user
@@ -381,7 +383,7 @@ class PeerClient:
         for user in allows:
             if user not in denys:
                 try:
-                    self.p2p.send_msg_body(msg_body=msg_body, user=user)
+                    self.p2p.send_msg_body(msg_body=msg_body, user=user, f_udp=f_udp)
                 except Exception as e:
                     logging.debug("Failed send msg to {}, {}".format(user.name, e))
                 c += 1
@@ -641,7 +643,7 @@ class PeerClient:
                     elif len(user.neers) < need_connection:
                         pass  # 接続数が少なすぎるノード
                     elif self.p2p.remove_connection(user):
-                        logging.debug("Remove connection %s:%d=%d" % (host_port[0], host_port[1], score))
+                        logging.debug("Remove connection {} {}".format(host_port, score))
                     else:
                         logging.debug("Failed remove connection. Already disconnected?")
                         if self.peers.remove(host_port):
