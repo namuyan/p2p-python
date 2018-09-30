@@ -398,10 +398,12 @@ class PeerClient:
             'data': data,
             'time': time.time(),
             'uuid': uuid}
+        f_udp = False
         if len(self.p2p.user) == 0:
             raise ConnectionError('No client connection.')
         elif cmd == ClientCmd.BROADCAST:
             allows = self.p2p.user
+            f_udp = True
         elif cmd == ClientCmd.FILE_DELETE:
             allows = self.p2p.user
         elif cmd == ClientCmd.FILE_GET:
@@ -421,7 +423,7 @@ class PeerClient:
         # ネットワークにメッセージを送信
         que = queue.LifoQueue()
         self.__waiting_result.put(uuid, que)
-        send_num = self._send_msg(item=temperate, allows=allows)
+        send_num = self._send_msg(item=temperate, allows=allows, f_udp=f_udp)
         if send_num == 0:
             raise PeerToPeerError('We try to send no client? {}clients connected.'.format(len(self.p2p.user)))
         # 返事が返ってくるのを待つ
