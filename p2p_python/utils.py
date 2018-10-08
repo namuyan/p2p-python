@@ -61,6 +61,7 @@ def is_reachable(host, port):
         except OSError:
             continue
         result = sock.connect_ex(host_port)
+        sock.close()
         if result == 0:
             return True
     else:
