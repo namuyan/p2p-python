@@ -23,6 +23,7 @@ class V:
     NETWORK_VER = None
     P2P_PORT = None
     P2P_ACCEPT = None
+    P2P_UDP_ACCEPT = None
 
     # setting
     F_FILE_CONTINUE_ASKING = False

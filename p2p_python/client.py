@@ -56,7 +56,7 @@ class PeerClient:
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self.__broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
         self.__user2user_route = StackDict()
-        self.__waiting_result = StackDict()
+        self._result_ques = StackDict()
         self.peers = JsonDataBase(os.path.join(V.DATA_PATH, 'peer.dat'), listen//2)  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
@@ -135,6 +135,7 @@ class PeerClient:
         allow_list = list()
         deny_list = list()
         ack_list = list()
+        f_udp = False
 
         if item['cmd'] == ClientCmd.PING_PONG:
             temperate['data'] = {
@@ -145,7 +146,7 @@ class PeerClient:
         elif item['cmd'] == ClientCmd.BROADCAST:
             if item['uuid'] in self.__broadcast_uuid:
                 return  # already get broadcast data
-            elif self.__waiting_result.include(item['uuid']):
+            elif self._result_ques.include(item['uuid']):
                 return  # I'm broadcaster, get from ack
             elif not self.broadcast_check(item['data']):
                 user.warn += 1
@@ -161,6 +162,7 @@ class PeerClient:
                 # send Response
                 temperate['type'] = T_REQUEST
                 temperate['data'] = item['data']
+                f_udp = True
 
         elif item['cmd'] == ClientCmd.GET_PEER_INFO:
             # [[(host,port), header],..]
@@ -292,7 +294,7 @@ class PeerClient:
                 return
             elif item['uuid'] in self.__broadcast_uuid:
                 return  # already get broadcast data
-            elif self.__waiting_result.include(item['uuid']):
+            elif self._result_ques.include(item['uuid']):
                 return  # I'm broadcaster, get from ack
 
             self.__broadcast_uuid.append(item['uuid'])
@@ -329,7 +331,7 @@ class PeerClient:
             pass
 
         # send message
-        send_count = self._send_msg(item=temperate, allows=allow_list, denys=deny_list)
+        send_count = self._send_msg(item=temperate, allows=allow_list, denys=deny_list, f_udp=f_udp)
         # send ack
         ack_count = 0
         if len(ack_list) > 0:
@@ -352,8 +354,8 @@ class PeerClient:
                 if ship_to != user:
                     logging.debug("Origin({}) differ from ({})".format(ship_to.name, user.name))
                     return
-        if self.__waiting_result.include(uuid):
-            que = self.__waiting_result.get(uuid)
+        if self._result_ques.include(uuid):
+            que = self._result_ques.get(uuid)
             if que:
                 que.put((user, data))
             # logging.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
@@ -364,13 +366,13 @@ class PeerClient:
         data = item['data']
         uuid = item['uuid']
 
-        if self.__waiting_result.include(uuid):
-            que = self.__waiting_result.get(uuid)
+        if self._result_ques.include(uuid):
+            que = self._result_ques.get(uuid)
             if que:
                 que.put((user, data))
             # logging.debug("Get ack from {}".format(user.name))
 
-    def _send_msg(self, item, allows=None, denys=None):
+    def _send_msg(self, item, allows=None, denys=None, f_udp=False):
         msg_body = bjson.dumps(item)
         if allows is None:
             allows = self.p2p.user
@@ -381,7 +383,7 @@ class PeerClient:
         for user in allows:
             if user not in denys:
                 try:
-                    self.p2p.send_msg_body(msg_body=msg_body, user=user)
+                    self.p2p.send_msg_body(msg_body=msg_body, user=user, f_udp=f_udp)
                 except Exception as e:
                     logging.debug("Failed send msg to {}, {}".format(user.name, e))
                 c += 1
@@ -390,16 +392,21 @@ class PeerClient:
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
         assert get_ident() != self.threadid, "The thread is used by p2p_python!"
         uuid = uuid if uuid else random.randint(10, 0xffffffff)
+        # 1. Make template
         temperate = {
             'type': T_REQUEST,
             'cmd': cmd,
             'data': data,
             'time': time.time(),
             'uuid': uuid}
+        f_udp = False
+
+        # 2. Setup allows to send nodes
         if len(self.p2p.user) == 0:
             raise ConnectionError('No client connection.')
         elif cmd == ClientCmd.BROADCAST:
             allows = self.p2p.user
+            f_udp = True
         elif cmd == ClientCmd.FILE_DELETE:
             allows = self.p2p.user
         elif cmd == ClientCmd.FILE_GET:
@@ -416,27 +423,37 @@ class PeerClient:
             raise ConnectionError("Not found client")
         if timeout <= 0:
             raise PeerToPeerError('timeout is zero.')
-        # ネットワークにメッセージを送信
+
+        # 3. Send message to a node or some nodes
         que = queue.LifoQueue()
-        self.__waiting_result.put(uuid, que)
-        send_num = self._send_msg(item=temperate, allows=allows)
+        self._result_ques.put(uuid, que)
+        send_num = self._send_msg(item=temperate, allows=allows, f_udp=f_udp)
         if send_num == 0:
             raise PeerToPeerError('We try to send no client? {}clients connected.'.format(len(self.p2p.user)))
-        # 返事が返ってくるのを待つ
+
+        # 4. Get response
+        item = None
         try:
             user, item = que.get(timeout=timeout)
             user.warn = 0
-            self.__waiting_result.put(uuid, None)
+            self._result_ques.put(uuid, None)
+            f_success = True
         except queue.Empty:
-            self.__waiting_result.put(uuid, None)
-            self.p2p.remove_connection(user, "Timeout by waiting {}".format(cmd))
+            user.warn += 1
+            self._result_ques.put(uuid, None)
+            f_success = False
+
+        # 5. Process response
+        if f_success:
+            if cmd == ClientCmd.BROADCAST:
+                self.broadcast_que.broadcast(data)
+            # Timeout時に raise queue.Empty
+            return user, item
+        else:
+            if user.warn > 3:
+                self.p2p.remove_connection(user, "Timeout by waiting {}".format(cmd))
             name = user.name if user else '{}users'.format(len(allows))
             raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, name, data))
-
-        if cmd == ClientCmd.BROADCAST:
-            self.broadcast_que.broadcast(data)
-        # Timeout時に raise queue.Empty
-        return user, item
 
     def send_direct_cmd(self, cmd, data, user=None, uuid=None):
         if len(self.p2p.user) == 0:
@@ -641,7 +658,7 @@ class PeerClient:
                     elif len(user.neers) < need_connection:
                         pass  # 接続数が少なすぎるノード
                     elif self.p2p.remove_connection(user):
-                        logging.debug("Remove connection %s:%d=%d" % (host_port[0], host_port[1], score))
+                        logging.debug("Remove connection {} {}".format(host_port, score))
                     else:
                         logging.debug("Failed remove connection. Already disconnected?")
                         if self.peers.remove(host_port):

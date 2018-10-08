@@ -10,6 +10,7 @@ class User:
         self.client_ver = None
         self.network_ver = None
         self.p2p_accept = None
+        self.p2p_udp_accept = None
         self.p2p_port = None
         self.start_time = None
         self.number = number
@@ -51,6 +52,7 @@ class User:
              'client_ver': self.client_ver,
              'network_ver': self.network_ver,
              'p2p_accept': self.p2p_accept,
+             'p2p_udp_accept': self.p2p_udp_accept,
              'p2p_port': self.p2p_port,
              'start_time': self.start_time}
         return r
@@ -60,12 +62,15 @@ class User:
         self.client_ver = s['client_ver']
         self.network_ver = s['network_ver']
         self.p2p_accept = s['p2p_accept']
+        self.p2p_udp_accept = s.get('p2p_udp_accept', False)
         self.p2p_port = s['p2p_port']
         self.start_time = s['start_time']
 
     def get_host_port(self):
         # connection先
-        return self.host_port[0], self.p2p_port
+        host_port = list(self.host_port)
+        host_port[1] = self.p2p_port
+        return tuple(host_port)
 
     def update_neers(self, items):
         # {(host,port): header, ..}
