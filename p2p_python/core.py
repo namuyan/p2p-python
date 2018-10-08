@@ -92,10 +92,9 @@ class Core:
                 self.traffic.put_traffic_down(msg_body)
                 msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                 if msg_body == b'Ping':
-                    logging.debug("Get udp accept from {}".format(user))
+                    logging.debug("Get udp ping from {}".format(user))
                     self.send_msg_body(msg_body=b'Pong', user=user)
                 else:
-                    logging.debug("Get udp packet from {}".format(user))
                     self.core_que.broadcast((user, msg_body))
             except OSError as e:
                 logging.debug("OSError {}".format(e))
@@ -437,11 +436,11 @@ class Core:
                     msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                     msg_body = zlib.decompress(msg_body)
                     if msg_body == b'Ping':
-                        logging.debug("receive ping from {}".format(user.name))
+                        logging.debug("receive tcp ping from {}".format(user.name))
                         self.send_msg_body(b'Pong', user)
                         continue
                     elif msg_body == b'Pong':
-                        logging.debug("receive Pong from {}".format(user.name))
+                        logging.debug("receive tcp Pong from {}".format(user.name))
                         self._ping.set()
                         continue
                     else:
