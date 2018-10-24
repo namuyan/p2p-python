@@ -23,7 +23,7 @@ class User:
         self.lock = Lock()
 
     def __repr__(self):
-        return "<User {} {}s {} warn{}>"\
+        return "<User {} {}s {} warn={}>"\
             .format(self.name, int(time.time())-self.start_time, (self.host_port[0], self.p2p_port), self.warn)
 
     def close(self):

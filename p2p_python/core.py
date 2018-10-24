@@ -92,9 +92,10 @@ class Core:
                 self.traffic.put_traffic_down(msg_body)
                 msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                 if msg_body == b'Ping':
-                    logging.debug("Get udp ping from {}".format(user))
+                    logging.debug("Get udp accept from {}".format(user))
                     self.send_msg_body(msg_body=b'Pong', user=user)
                 else:
+                    logging.debug("Get udp packet from {}".format(user))
                     self.core_que.broadcast((user, msg_body))
             except OSError as e:
                 logging.debug("OSError {}".format(e))
@@ -374,7 +375,8 @@ class Core:
                    name='S:' + new_user.name, args=(new_user,), daemon=True).start()
             # Port accept check
             time.sleep(10)
-            self.is_reachable(new_user)
+            if new_user in self.user:
+                self.is_reachable(new_user)
             return
         except ConnectionAbortedError as e:
             error = "ConnectionAbortedError, {}".format(e)
@@ -394,13 +396,18 @@ class Core:
 
     def _receive_msg(self, user):
         # Accept connection
-        check_user = self.host_port2user(user.get_host_port())
-        if check_user:
-            if not self.ping(check_user):
-                error = "Failed ping, Replace new connection {} => {}".format(check_user, user)
-                self.remove_connection(check_user, error)
-                logging.info(error)
         with self.lock:
+            for check_user in self.user:
+                if check_user.name != user.name:
+                    continue
+                if self.ping(check_user):
+                    error = "Remove new connection {}, continue connect {}".format(user, check_user)
+                    self.remove_connection(user, error)
+                    logging.info(error)
+                else:
+                    error = "Same origin, Replace new connection {} => {}".format(check_user, user)
+                    self.remove_connection(check_user, error)
+                    logging.info(error)
             self.user.append(user)
         logging.info("Accept connection \"{}\"".format(user.name))
 
@@ -436,11 +443,11 @@ class Core:
                     msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                     msg_body = zlib.decompress(msg_body)
                     if msg_body == b'Ping':
-                        logging.debug("receive tcp ping from {}".format(user.name))
+                        logging.debug("receive ping from {}".format(user.name))
                         self.send_msg_body(b'Pong', user)
                         continue
                     elif msg_body == b'Pong':
-                        logging.debug("receive tcp Pong from {}".format(user.name))
+                        logging.debug("receive Pong from {}".format(user.name))
                         self._ping.set()
                         continue
                     else:
