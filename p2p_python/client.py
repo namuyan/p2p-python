@@ -439,7 +439,8 @@ class PeerClient:
             self._result_ques.put(uuid, None)
             f_success = True
         except queue.Empty:
-            user.warn += 1
+            if user:
+                user.warn += 1
             self._result_ques.put(uuid, None)
             f_success = False
 
@@ -450,7 +451,7 @@ class PeerClient:
             # Timeout時に raise queue.Empty
             return user, item
         else:
-            if user.warn > 3:
+            if user and user.warn > 3:
                 self.p2p.remove_connection(user, "Timeout by waiting {}".format(cmd))
             name = user.name if user else '{}users'.format(len(allows))
             raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, name, data))
