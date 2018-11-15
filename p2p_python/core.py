@@ -155,13 +155,17 @@ class Core:
         def sock_listen_loop():
             while not self.f_stop:
                 try:
-                    while len(listen_sel.get_map()) == 0:
+                    listen_map = listen_sel.get_map()
+                    if listen_map is None:
+                        logging.debug("Closed.")
+                        return
+                    while len(listen_map) == 0:
                         time.sleep(0.5)
                     events = listen_sel.select()
                     for key, mask in events:
                         callback = key.data
                         callback(key.fileobj, mask)
-                except BaseException as e:
+                except Exception as e:
                     logging.error(e)
                     time.sleep(3)
 
