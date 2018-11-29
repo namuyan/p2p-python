@@ -692,12 +692,13 @@ class PeerClient:
                         if self.peers.remove(host_port):
                             del user_score[host_port]
 
-                elif len(self.p2p.user) > self.p2p.listen // 2 and random.random() < 0.01:
-                    # Mutation
-                    logging.debug("Mutate Score {}".format(user_score))
-                    user = random.choice(self.p2p.user)
-                    self.p2p.remove_connection(user)
-                    logging.debug("Mutate connection, close {}".format(user.name))
+                # disabled mutation fnc
+                # elif len(self.p2p.user) > self.p2p.listen // 2 and random.random() < 0.01:
+                #    # Mutation
+                #    logging.debug("Mutate Score {}".format(user_score))
+                #    user = random.choice(self.p2p.user)
+                #    self.p2p.remove_connection(user)
+                #    logging.debug("Mutate connection, close {}".format(user.name))
 
                 else:
                     time.sleep(60)  # Do nothing
