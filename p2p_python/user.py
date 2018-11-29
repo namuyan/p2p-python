@@ -19,12 +19,14 @@ class User:
         self.aeskey = aeskey
         self.sock_type = sock_type
         self.neers = dict()
+        # user experience
+        self.score = 0
         self.warn = 0
         self.lock = Lock()
 
     def __repr__(self):
-        return "<User {} {}s {} warn={}>"\
-            .format(self.name, int(time.time())-self.start_time, (self.host_port[0], self.p2p_port), self.warn)
+        return "<User {} {}s {} score={} warn={}>".format(
+            self.name, int(time.time())-self.start_time, (self.host_port[0], self.p2p_port), self.score, self.warn)
 
     def close(self):
         try: self.sock.shutdown(socket.SHUT_RDWR)

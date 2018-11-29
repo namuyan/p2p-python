@@ -6,21 +6,22 @@ import bjson
 import logging
 import random
 import socket
-import time
 import zlib
 import selectors
+from time import time, sleep
 from threading import Thread, Lock, Event
 from nem_ed25519.base import Encryption
-from .tool.traffic import Traffic
-from .tool.utils import AESCipher, QueueSystem
-from .config import C, V, Debug, PeerToPeerError
-from .user import User
+from p2p_python.tool.traffic import Traffic
+from p2p_python.tool.utils import AESCipher, QueueSystem
+from p2p_python.config import C, V, Debug, PeerToPeerError
+from p2p_python.user import User
 
 # constant
 SERVER_SIDE = 'Server'
 CLIENT_SIDE = 'Client'
 
 listen_sel = selectors.DefaultSelector()
+ban_address = list()  # deny connection address
 
 
 class Core:
@@ -30,7 +31,7 @@ class Core:
 
     def __init__(self, host=None, listen=15, buffsize=4096):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
-        self.start_time = int(time.time())
+        self.start_time = int(time())
         self.number = 0
         self.user = list()
         self.lock = Lock()
@@ -160,14 +161,14 @@ class Core:
                         logging.debug("Closed.")
                         return
                     while len(listen_map) == 0:
-                        time.sleep(0.5)
+                        sleep(0.5)
                     events = listen_sel.select()
                     for key, mask in events:
                         callback = key.data
                         callback(key.fileobj, mask)
                 except Exception as e:
                     logging.error(e)
-                    time.sleep(3)
+                    sleep(3)
 
         assert s_family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
         self.traffic.start()
@@ -196,6 +197,8 @@ class Core:
         try:
             for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
                 af, socktype, proto, canonname, host_port = res
+                if host_port[0] in ban_address:
+                    return False  # baned address
                 try:
                     sock = socket.socket(af, socktype, proto)
                 except OSError:
@@ -250,7 +253,7 @@ class Core:
 
             c = 20
             while new_user not in self.user and c > 0:
-                time.sleep(1)
+                sleep(1)
                 c -= 1
             self.is_reachable(new_user)
             if c == 0:
@@ -378,7 +381,7 @@ class Core:
             Thread(target=self._receive_msg,
                    name='S:' + new_user.name, args=(new_user,), daemon=True).start()
             # Port accept check
-            time.sleep(10)
+            sleep(10)
             if new_user in self.user:
                 self.is_reachable(new_user)
             return

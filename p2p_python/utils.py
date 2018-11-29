@@ -2,7 +2,7 @@ import socket
 import os
 import random
 from tempfile import gettempdir
-from .config import V, Debug
+from p2p_python.config import V, Debug
 
 
 def get_version():

@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 
-import time
 import logging
 import bjson
 import os.path
@@ -11,14 +10,15 @@ import copy
 import queue
 import collections
 import socket
+from time import time, sleep
 from hashlib import sha256
 from threading import Thread, get_ident
 from nem_ed25519.base import Encryption
-from .config import C, V, Debug, PeerToPeerError
-from .core import Core
-from .utils import is_reachable
-from .tool.utils import StackDict, EventIgnition, JsonDataBase, QueueSystem
-from .tool.upnpc import UpnpClient
+from p2p_python.config import C, V, Debug, PeerToPeerError
+from p2p_python.core import Core, ban_address
+from p2p_python.utils import is_reachable
+from p2p_python.tool.utils import StackDict, EventIgnition, JsonDataBase, QueueSystem
+from p2p_python.tool.upnpc import UpnpClient
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
 GLOBAL_IPV4 = UpnpClient.get_global_ip()
@@ -51,11 +51,12 @@ class PeerClient:
 
     def __init__(self, listen=15, f_local=False):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
+        assert not self.f_running, 'Already running. only one P2P process is allowed per process.'
         self.p2p = Core(host='localhost' if f_local else None, listen=listen)
         self.broadcast_que = QueueSystem()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
-        self.__broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
-        self.__user2user_route = StackDict()
+        self._broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
+        self._user2user_route = StackDict()
         self._result_ques = StackDict()
         self.peers = JsonDataBase(os.path.join(V.DATA_PATH, 'peer.dat'), listen//2)  # {(host, port): header,..}
         # recode traffic if f_debug true
@@ -130,7 +131,7 @@ class PeerClient:
             'type': T_RESPONSE,
             'cmd': item['cmd'],
             'data': None,
-            'time': time.time(),
+            'time': time(),
             'uuid': item['uuid']}
         allow_list = list()
         deny_list = list()
@@ -140,20 +141,21 @@ class PeerClient:
         if item['cmd'] == ClientCmd.PING_PONG:
             temperate['data'] = {
                 'ping': item['data'],
-                'pong': time.time()}
+                'pong': time()}
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.BROADCAST:
-            if item['uuid'] in self.__broadcast_uuid:
+            if item['uuid'] in self._broadcast_uuid:
                 return  # already get broadcast data
             elif self._result_ques.include(item['uuid']):
                 return  # I'm broadcaster, get from ack
             elif not self.broadcast_check(item['data']):
                 user.warn += 1
-                self.__broadcast_uuid.append(item['uuid'])
+                self._broadcast_uuid.append(item['uuid'])
                 return  # not allowed broadcast data
             else:
-                self.__broadcast_uuid.append(item['uuid'])
+                user.score += 1
+                self._broadcast_uuid.append(item['uuid'])
                 self.broadcast_que.broadcast(item['data'])
                 deny_list.append(user)
                 allow_list = None
@@ -187,7 +189,7 @@ class PeerClient:
             file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
             f_existence = os.path.exists(file_path)
             if 'uuid' in item['data']:
-                f_asked = self.__user2user_route.include(item['data']['uuid'])
+                f_asked = self._user2user_route.include(item['data']['uuid'])
             else:
                 f_asked = False
             temperate['data'] = {'have': f_existence, 'asked': f_asked}
@@ -238,7 +240,7 @@ class PeerClient:
                 logging.debug("Asking, Candidate={}, ask=>{}".format(len(candidates), hopeful.name))
                 try:
                     data = {'hash': file_hash, 'asked': nears_name}
-                    self.__user2user_route.put(uuid=item['uuid'], item=(user, hopeful))
+                    self._user2user_route.put(uuid=item['uuid'], item=(user, hopeful))
                     from_client, data = self.send_command(ClientCmd.FILE_GET, data,
                                                           item['uuid'], user=hopeful, timeout=5)
                     temperate['data'] = data
@@ -259,13 +261,13 @@ class PeerClient:
                     raw = f.read()
                 temperate['type'] = T_RESPONSE
                 temperate['data'] = raw
-                self.__user2user_route.put(uuid=item['uuid'], item=(user, user))
+                self._user2user_route.put(uuid=item['uuid'], item=(user, user))
                 if 0 < self._send_msg(item=temperate, allows=[user], denys=list()):
                     logging.debug("Send file to {} {}".format(user.name, file_hash))
                 else:
                     logging.debug("Failed send file to {} {}".format(user.name, file_hash))
 
-            if self.__user2user_route.include(item['uuid']):
+            if self._user2user_route.include(item['uuid']):
                 return
             logging.debug("Asked file get by {}".format(user.name))
             file_hash = item['data']['hash']
@@ -288,16 +290,16 @@ class PeerClient:
             cert_start = item_['cert']['start']
             cert_stop = item_['cert']['stop']
 
-            if not(cert_start < int(time.time()) < cert_stop):
+            if not(cert_start < int(time()) < cert_stop):
                 return  # old signature
             elif master_pk not in C.MASTER_KEYS:
                 return
-            elif item['uuid'] in self.__broadcast_uuid:
+            elif item['uuid'] in self._broadcast_uuid:
                 return  # already get broadcast data
             elif self._result_ques.include(item['uuid']):
                 return  # I'm broadcaster, get from ack
 
-            self.__broadcast_uuid.append(item['uuid'])
+            self._broadcast_uuid.append(item['uuid'])
             cert_raw = bjson.dumps((master_pk, signer_pk, cert_start, cert_stop), compress=False)
             sign_raw = bjson.dumps((file_hash, item['uuid']), compress=False)
             deny_list.append(user)
@@ -349,8 +351,8 @@ class PeerClient:
         uuid = item['uuid']
         if cmd == ClientCmd.FILE_GET:
             # origin check
-            if self.__user2user_route.include(uuid):
-                ship_from, ship_to = self.__user2user_route.get(uuid)
+            if self._user2user_route.include(uuid):
+                ship_from, ship_to = self._user2user_route.get(uuid)
                 if ship_to != user:
                     logging.debug("Origin({}) differ from ({})".format(ship_to.name, user.name))
                     return
@@ -397,7 +399,7 @@ class PeerClient:
             'type': T_REQUEST,
             'cmd': cmd,
             'data': data,
-            'time': time.time(),
+            'time': time(),
             'uuid': uuid}
         f_udp = False
 
@@ -411,7 +413,7 @@ class PeerClient:
             allows = self.p2p.user
         elif cmd == ClientCmd.FILE_GET:
             user = user if user else random.choice(self.p2p.user)
-            self.__user2user_route.put(uuid=uuid, item=(None, user))
+            self._user2user_route.put(uuid=uuid, item=(None, user))
             allows = [user]
             timeout = 5
         elif user is None:
@@ -451,7 +453,7 @@ class PeerClient:
             # Timeout時に raise queue.Empty
             return user, item
         else:
-            if user and user.warn > 3:
+            if user and user.warn > 5:
                 self.p2p.remove_connection(user, "Timeout by waiting {}".format(cmd))
             name = user.name if user else '{}users'.format(len(allows))
             raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, name, data))
@@ -527,7 +529,7 @@ class PeerClient:
 
     @staticmethod
     def create_cert(master_sk, signer_pk, cert_start, cert_stop):
-        assert int(time.time()) < cert_start < cert_stop, 'wrong time setting of cert.'
+        assert int(time()) < cert_start < cert_stop, 'wrong time setting of cert.'
         master_ecc = Encryption()
         master_ecc.sk = master_sk
         cert_raw = bjson.dumps((master_ecc.pk, signer_pk, cert_start, cert_stop), compress=False)
@@ -558,7 +560,7 @@ class PeerClient:
             pass
 
     def stabilize(self):
-        time.sleep(5)
+        sleep(5)
         logging.info("start stabilize.")
         ignore_peers = {
             (GLOBAL_IPV4, V.P2P_PORT),
@@ -586,7 +588,7 @@ class PeerClient:
                 if need <= 0:
                     break
                 else:
-                    time.sleep(5)
+                    sleep(5)
 
         # Stabilize
         user_score = dict()
@@ -596,9 +598,9 @@ class PeerClient:
         while not self.f_stop:
             count += 1
             if len(self.p2p.user) <= need_connection:
-                time.sleep(3)
+                sleep(3)
             else:
-                time.sleep(1.5 * (1 + random.random()) * len(self.p2p.user))
+                sleep(1.5 * (1 + random.random()) * len(self.p2p.user))
             if count % 24 == 1 and len(sticky_nodes) > 0:
                 logging.debug("Clean sticky_nodes. [{}=>0]".format(len(sticky_nodes)))
                 sticky_nodes.clear()
@@ -609,12 +611,12 @@ class PeerClient:
                         self.peers.remove(host_port)
                         continue
                     if self.p2p.create_connection(host_port[0], host_port[1]):
-                        time.sleep(5)
+                        sleep(5)
                     else:
                         self.peers.remove(host_port)
                         continue
                 elif len(self.p2p.user) == 0 and len(self.peers) == 0:
-                    time.sleep(10)
+                    sleep(10)
                     continue
 
                 # peer list update (user)
@@ -649,7 +651,7 @@ class PeerClient:
                     sorted_score = [(host_port, score) for host_port, score in sorted_score
                                     if host_port in [user.get_host_port() for user in self.p2p.user]]
                     if len(sorted_score) == 0:
-                        time.sleep(10)
+                        sleep(10)
                         continue
                     logging.debug("Remove Score {}".format(sorted_score))
                     host_port, score = random.choice(sorted_score)
@@ -673,7 +675,7 @@ class PeerClient:
                                     if host_port not in [user.get_host_port() for user in self.p2p.user]
                                     and sticky_nodes.get(host_port, 0) < STICKY_LIMIT]
                     if len(sorted_score) == 0:
-                        time.sleep(10)
+                        sleep(10)
                         continue
                     logging.debug("Join Score {}".format(sorted_score))
                     host_port, score = random.choice(sorted_score)
@@ -684,6 +686,8 @@ class PeerClient:
                     elif host_port in ignore_peers:
                         self.peers.remove(host_port)
                         continue
+                    elif host_port[0] in ban_address:
+                        continue  # BAN address
                     elif self.p2p.create_connection(host=host_port[0], port=host_port[1]):
                         logging.debug("New connection {}".format(host_port))
                     else:
@@ -701,7 +705,7 @@ class PeerClient:
                 #    logging.debug("Mutate connection, close {}".format(user.name))
 
                 else:
-                    time.sleep(60)  # Do nothing
+                    sleep(60)  # Do nothing
                     continue
 
             except TimeoutError as e:
