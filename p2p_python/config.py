@@ -27,6 +27,7 @@ class V:
 
     # setting
     F_FILE_CONTINUE_ASKING = False
+    TOR_CONNECTION = None  # proxy (host, port)
 
 
 class Debug:

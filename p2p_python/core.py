@@ -6,6 +6,7 @@ import bjson
 import logging
 import random
 import socket
+import socks
 import zlib
 import selectors
 from time import time, sleep
@@ -200,7 +201,13 @@ class Core:
                 if host_port[0] in ban_address:
                     return False  # baned address
                 try:
-                    sock = socket.socket(af, socktype, proto)
+                    if V.TOR_CONNECTION:
+                        if af != socket.AF_INET:
+                            continue
+                        sock = socks.socksocket()
+                        sock.setproxy(socks.PROXY_TYPE_SOCKS5, V.TOR_CONNECTION[0], V.TOR_CONNECTION[1])
+                    else:
+                        sock = socket.socket(af, socktype, proto)
                 except OSError:
                     continue
                 sock.settimeout(10)
