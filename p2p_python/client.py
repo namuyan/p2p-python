@@ -8,7 +8,7 @@ import os.path
 import random
 import copy
 import queue
-import collections
+from collections import deque
 import socket
 from time import time, sleep
 from hashlib import sha256
@@ -17,7 +17,7 @@ from nem_ed25519.base import Encryption
 from p2p_python.config import C, V, Debug, PeerToPeerError
 from p2p_python.core import Core, ban_address
 from p2p_python.utils import is_reachable
-from p2p_python.tool.utils import StackDict, EventIgnition, JsonDataBase, QueueSystem
+from p2p_python.tool.utils import *
 from p2p_python.tool.upnpc import UpnpClient
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
@@ -55,7 +55,7 @@ class PeerClient:
         self.p2p = Core(host='localhost' if f_local else None, listen=listen)
         self.broadcast_que = QueueSystem()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
-        self._broadcast_uuid = collections.deque(maxlen=listen*20)  # Broadcastされたuuid
+        self._broadcast_uuid = deque(maxlen=listen*20)  # Broadcastされたuuid
         self._user2user_route = StackDict()
         self._result_ques = StackDict()
         self.peers = JsonDataBase(os.path.join(V.DATA_PATH, 'peer.dat'), listen//2)  # {(host, port): header,..}
@@ -168,7 +168,7 @@ class PeerClient:
 
         elif item['cmd'] == ClientCmd.GET_PEER_INFO:
             # [[(host,port), header],..]
-            temperate['data'] = self.peers.data
+            temperate['data'] = self.peers.copy()
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.GET_NEARS:

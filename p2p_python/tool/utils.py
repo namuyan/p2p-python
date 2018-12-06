@@ -285,62 +285,47 @@ class AESCipher:
         return s[:-ord(s[len(s) - 1:])]
 
 
-class JsonDataBase:
-    """
-    まるでDictのように扱えて自動的にSaveしてくれる
-    """
+class JsonDataBase(dict):
     def __init__(self, path, remove_limit=3):
+        super().__init__()
         self.remove_limit = remove_limit
         self.path = path
-        self.data = dict()
         self.load()
         atexit.register(self.save)
-        self.lock = Lock()
 
     def save(self):
         with open(self.path, mode='bw') as fp:
-            bjson.dump(self.data, fp=fp)
+            bjson.dump(dict(self), fp=fp)
         logging.info("JsonDataBase saved to {}".format(os.path.split(self.path)[1]))
 
     def load(self):
         try:
             with open(self.path, mode='br') as fp:
-                self.data = bjson.load(fp=fp)
-        except:
+                data = bjson.load(fp=fp)
+                if not isinstance(data, dict):
+                    for k, v in data.items:
+                        self[k] = v
+        except Exception:
             with open(self.path, mode='bw') as fp:
-                bjson.dump(self.data, fp=fp)
+                bjson.dump(dict(self), fp=fp)
         logging.info("JsonDataBase load from {}".format(os.path.split(self.path)[1]))
 
-    def keys(self):
-        return self.data.keys()
-
-    def values(self):
-        return self.data.values()
-
     def remove(self, host_port):
-        with self.lock:
-            if host_port in self.data and \
-                    len(self.data) >= self.remove_limit:
-                del self.data[host_port]
-                return True
+        if host_port in self and len(self) >= self.remove_limit:
+            del self[host_port]
+            return True
         return False
-
-    def __len__(self):
-        return len(self.data)
-
-    def __contains__(self, item):
-        return item in self.data
-
-    def __setitem__(self, key, value):
-        with self.lock:
-            self.data[key] = value
-
-    def __getitem__(self, key):
-        with self.lock:
-            if key in self.data:
-                return self.data[key]
-        return None
 
 
 def version2int(v):
     return sum([pow(1000, i) * int(d) for i, d in enumerate(reversed(v.split('.')))])
+
+
+__all__ = [
+    "StackDict",
+    "QueueSystem",
+    "EventIgnition",
+    "AESCipher",
+    "JsonDataBase",
+    "version2int"
+]

@@ -14,12 +14,12 @@ except (IOError, UnicodeError):
 def _requires_from_file(filename):
     return open(filename).read().splitlines()
 
+
 # version
 here = os.path.dirname(os.path.abspath(__file__))
+ver_path = os.path.join(here,'p2p_python', '__init__.py')
 version = next((line.split('=')[1].strip().replace("'", '')
-                for line in open(os.path.join(here,
-                                              'p2p_python',
-                                              '__init__.py'))
+                for line in open(ver_path)
                 if line.startswith('__version__ = ')),
                '0.0.dev0')
 

@@ -23,7 +23,8 @@ def get_name():
     return "{}:{}".format(random.choice(name), random.randint(10000, 99999))
 
 
-def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, p2p_udp_accept=True, sub_dir=None, f_debug=False):
+def setup_p2p_params(network_ver, p2p_port, p2p_accept=True,
+                     p2p_udp_accept=True, sub_dir=None, f_debug=False):
     if f_debug:
         Debug.P_EXCEPTION = True
         Debug.P_RECEIVE_MSG_INFO = True
@@ -72,3 +73,9 @@ def is_reachable(host, port):
 def trim_msg(item, num):
     str_item = str(item)
     return str_item[:num] + ('...' if len(str_item) > num else '')
+
+
+__all__ = [
+    "get_version", "get_name", "is_reachable",
+    "setup_p2p_params", "trim_msg",
+]

@@ -1,10 +1,13 @@
-from .config import C, V, PeerToPeerError
-import time
+from time import time
 import socket
 from threading import Lock
 
 
 class User:
+    __slots__ = ("name", "client_ver", "network_ver", "p2p_accept", "p2p_udp_accept",
+                 "p2p_port", "start_time", "number", "sock", "host_port",
+                 "aeskey", "sock_type", "neers", "score", "warn", "lock")
+
     def __init__(self, number, sock, host_port, aeskey, sock_type):
         self.name = None
         self.client_ver = None
@@ -26,7 +29,10 @@ class User:
 
     def __repr__(self):
         return "<User {} {}s {} score={} warn={}>".format(
-            self.name, int(time.time())-self.start_time, (self.host_port[0], self.p2p_port), self.score, self.warn)
+            self.name, int(time())-self.start_time, (self.host_port[0], self.p2p_port), self.score, self.warn)
+
+    def __del__(self):
+        self.close()
 
     def close(self):
         try: self.sock.shutdown(socket.SHUT_RDWR)
@@ -46,7 +52,9 @@ class User:
             'sock': str(self.sock),
             'host_port': self.host_port,
             'aeskey': self.aeskey,
-            'sock_type': self.sock_type}
+            'sock_type': self.sock_type,
+            'score': self.score,
+            'warn': self.warn}
         return r
 
     def serialize(self):
