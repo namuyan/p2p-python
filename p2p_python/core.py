@@ -10,7 +10,7 @@ import socks
 import zlib
 import selectors
 from time import time, sleep
-from threading import Thread, Lock, Event
+from threading import Thread, current_thread, Lock, Event
 from nem_ed25519.base import Encryption
 from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher, QueueSystem
@@ -347,6 +347,7 @@ class Core:
         self.traffic.put_traffic_up(send_data)
 
     def _initial_connection_check(self, sock, host_port):
+        current_thread().setName('InitCheck')
         sock.settimeout(10)
         try:
             # ヘッダーを受取る
@@ -511,24 +512,33 @@ class Core:
         f_tcp = True
         host_port = new_user.get_host_port()
         af = socket.AF_INET if len(host_port) == 2 else socket.AF_INET6
+        sock = socket.socket(af, socket.SOCK_STREAM)
         try:
-            sock = socket.socket(af, socket.SOCK_STREAM)
             r = sock.connect_ex(host_port)
             if r != 0:
                 f_tcp = False
-            sock.close()
         except OSError:
             f_tcp = False
+        try:
+            sock.close()
+        except OSError:
+            pass
         f_udp = self.ping(user=new_user, f_udp=True)
+        f_changed = False
         # reflect user status
         if f_tcp is not new_user.p2p_accept:
             logging.debug("{} Update TCP accept status [{}>{}]"
                           .format(new_user, new_user.p2p_accept, f_tcp))
             new_user.p2p_accept = f_tcp
+            f_changed = True
         if f_udp is not new_user.p2p_udp_accept:
             logging.debug("{} Update UDP accept status [{}>{}]"
                           .format(new_user, new_user.p2p_udp_accept, f_udp))
             new_user.p2p_udp_accept = f_udp
+            f_changed = True
+        # if f_changed:
+        #    logging.info("{} Change TCP/UDP accept status tcp={} udp={}"
+        #                 .format(new_user, f_tcp, f_udp))
 
     def name2user(self, name):
         for user in self.user:
