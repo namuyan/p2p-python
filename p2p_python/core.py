@@ -89,12 +89,12 @@ class Core:
                 msg_len = msg[0]
                 msg_name, msg_body = msg[1:msg_len+1], msg[msg_len+1:]
                 user = self.name2user(msg_name.decode())
-                if user is None or not user.p2p_udp_accept:
+                if user is None:
                     return
                 self.traffic.put_traffic_down(msg_body)
                 msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                 if msg_body == b'Ping':
-                    logging.debug("Get udp accept from {}".format(user))
+                    logging.info("Get udp accept from {}".format(user))
                     self.send_msg_body(msg_body=b'Pong', user=user)
                 else:
                     logging.debug("Get udp packet from {}".format(user))
