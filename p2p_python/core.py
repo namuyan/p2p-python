@@ -174,13 +174,15 @@ class Core:
         assert s_family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
         self.traffic.start()
         # Pooling connection
-        if not V.P2P_ACCEPT:
-            logging.info('You set p2p accept flag False.')
-        else:
-            # create server ipv4/ipv6
+        if V.P2P_ACCEPT:
             create_tcp_server_socks()
+        if V.P2P_UDP_ACCEPT:
             create_udp_server_socks()
+        # listen socket ipv4/ipv6
+        if V.P2P_ACCEPT or V.P2P_UDP_ACCEPT:
             Thread(target=sock_listen_loop, name='Listen', daemon=True).start()
+        else:
+            logging.info('You set p2p accept flag False.')
         self.f_running = True
 
     def get_server_header(self):
