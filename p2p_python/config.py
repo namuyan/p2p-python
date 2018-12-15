@@ -1,8 +1,8 @@
 
 
 class C:
-    # 一度に受け取れる最大データ量(260kBytes)
-    MAX_RECEIVE_SIZE = 260000
+    # 一度に受け取れる最大データ量(5MBytes)
+    MAX_RECEIVE_SIZE = 5000 * 1000
 
     # type
     T_SERVER = 'type/server'

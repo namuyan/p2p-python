@@ -9,6 +9,7 @@ import socket
 import socks
 import zlib
 import selectors
+from io import BytesIO
 from time import time, sleep
 from threading import Thread, current_thread, Lock, Event
 from nem_ed25519.base import Encryption
@@ -428,81 +429,89 @@ class Core:
             self.user.append(user)
         logging.info("Accept connection \"{}\"".format(user.name))
 
-        # pooling
-        msg_prefix = b''
-        msg_len = 0
-        msg_body = b''
+        user.sock.settimeout(5.0)
+        bio = BytesIO()
+        bio_length = 0
+        msg_length = 0
+        f_raise_timeout = False
         error = None
-        try:
-            while not self.f_stop:
-                if len(msg_prefix) == 0:
-                    user.sock.settimeout(3600)
-                    first_msg = user.sock.recv(self.buffsize)
-                    user.sock.settimeout(10)
+        while not self.f_stop:
+            try:
+                get_msg = user.sock.recv(self.buffsize)
+                if len(get_msg) == 0:
+                    error = "Fall in loop, socket closed."
+                    break
+
+                # check message params init
+                bio_length += bio.write(get_msg)
+                if msg_length == 0:
+                    # init message params
+                    msg_bytes = bio.getvalue()
+                    msg_length, initial_bytes = int.from_bytes(msg_bytes[:4], 'big'), msg_bytes[4:]
+                    bio.close()
+                    bio = BytesIO()
+                    bio_length = bio.write(initial_bytes)
+                elif bio_length == 0:
+                    error = "Why bio_length is zero?, msg_length={}".format(msg_length, bio_length)
+                    break
                 else:
-                    first_msg, msg_prefix = msg_prefix, b''
+                    pass
 
-                # Start receive message
-                msg_len = int.from_bytes(first_msg[:4], 'big')
-                msg_body = first_msg[4:]
-
-                # Notice long message
-                if Debug.F_LONG_MSG_INFO and msg_len != len(msg_body):
-                    logging.debug("Receive long msg, len=%d, body=%d" % (msg_len, len(msg_body)))
-
-                if msg_len == 0:
-                    raise ConnectionAbortedError("1:Socket error, fall in loop.")
-                elif len(msg_body) == 0:
-                    raise ConnectionAbortedError("2:Socket error, fall in loop.")
-                elif len(msg_body) >= msg_len:
-                    msg_body, msg_prefix = msg_body[:msg_len], msg_body[msg_len:]
-                    self.traffic.put_traffic_down(msg_body)
-                    msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
-                    msg_body = zlib.decompress(msg_body)
-                    if msg_body == b'Ping':
-                        logging.debug("receive ping from {}".format(user.name))
-                        self.send_msg_body(b'Pong', user)
-                        continue
-                    elif msg_body == b'Pong':
-                        logging.debug("receive Pong from {}".format(user.name))
-                        self._ping.set()
-                        continue
+                # check complete message receive
+                if bio_length >= msg_length:
+                    # success, get all message
+                    msg_bytes = bio.getvalue()
+                    msg_body, initial_bytes = msg_bytes[:msg_length], msg_bytes[msg_length:]
+                    if len(initial_bytes) == 0:
+                        # no another message
+                        msg_length = 0
+                        f_raise_timeout = False
+                    elif len(initial_bytes) < 4:
+                        error = "Failed to get message length? {}".format(initial_bytes)
+                        break
                     else:
-                        self.core_que.broadcast((user, msg_body))
+                        # another message pushing
+                        msg_length, initial_bytes = int.from_bytes(initial_bytes[:4], 'big'), initial_bytes[4:]
+                        f_raise_timeout = True
+                    bio.close()
+                    bio = BytesIO()
+                    bio_length = bio.write(initial_bytes)
+                else:
+                    # continue getting message
+                    f_raise_timeout = True
                     continue
 
-                # continue receiving message
-                while True:
-                    new_body = user.sock.recv(self.buffsize)
-                    msg_body += new_body
-                    if len(new_body) == 0:
-                        raise ConnectionAbortedError("3:Socket error, fall in loop.")
-                    elif len(msg_body) >= msg_len:
-                        msg_body, msg_prefix = msg_body[:msg_len], msg_body[msg_len:]
-                        self.traffic.put_traffic_down(msg_body)
-                        msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
-                        msg_body = zlib.decompress(msg_body)
-                        self.core_que.broadcast((user, msg_body))
-                        break
-                    elif len(msg_body) > C.MAX_RECEIVE_SIZE + 5000:
-                        raise ConnectionAbortedError("Too many data! (MAX {}Kb)"
-                                                     .format(C.MAX_RECEIVE_SIZE // 1000))
-                    else:
-                        continue
+                # continue to process msg_body
+                self.traffic.put_traffic_down(msg_body)
+                msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
+                msg_body = zlib.decompress(msg_body)
+                if msg_body == b'Ping':
+                    logging.debug("receive ping from {}".format(user.name))
+                    self.send_msg_body(b'Pong', user)
+                elif msg_body == b'Pong':
+                    logging.debug("receive Pong from {}".format(user.name))
+                    self._ping.set()
+                else:
+                    self.core_que.broadcast((user, msg_body))
 
-        except socket.timeout:
-            error = "socket timeout {}".format(user.name)
-            logging.debug(error)
-        except ConnectionAbortedError as e:
-            error = "ConnectionAbortedError :len={}, msg={} e={}".format(msg_len, msg_body, e)
-        except ConnectionResetError:
-            error = "ConnectionResetError by {}".format(user.name)
-        except OSError as e:
-            error = "OSError by {}, {}".format(user.name, e)
-        except Exception as e:
-            error = "BaseException by {}, {}".format(user.name, e)
+            except socket.timeout:
+                if f_raise_timeout:
+                    error = "Timeout: Not allowed timeout when getting message!".format(user.name)
+                    break
+            except ConnectionError as e:
+                error = "ConnectionError: " + str(e)
+                break
+            except OSError as e:
+                error = "OSError: " + str(e)
+                break
+            except Exception:
+                import traceback
+                error = "Exception: " + str(traceback.format_exc())
+                break
 
-        # raised exception on loop
+        # After exit from loop, close socket
+        if not bio.closed:
+            bio.close()
         logging.debug(error)
         if not self.remove_connection(user, error):
             logging.debug("Failed remove user {}".format(user.name))
