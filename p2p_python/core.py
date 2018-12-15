@@ -430,7 +430,7 @@ class Core:
         logging.info("Accept connection \"{}\"".format(user.name))
 
         user.sock.settimeout(5.0)
-        bio = BytesIO()
+        bio = BytesIO()  # Warning: don't use initial_bytes, same duplicate ID used?
         bio_length = 0
         msg_length = 0
         f_raise_timeout = False
