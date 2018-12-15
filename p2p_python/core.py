@@ -493,6 +493,7 @@ class Core:
                     self._ping.set()
                 else:
                     self.core_que.broadcast((user, msg_body))
+                f_raise_timeout = False
 
             except socket.timeout:
                 if f_raise_timeout:
@@ -512,7 +513,6 @@ class Core:
         # After exit from loop, close socket
         if not bio.closed:
             bio.close()
-        logging.debug(error)
         if not self.remove_connection(user, error):
             logging.debug("Failed remove user {}".format(user.name))
 
