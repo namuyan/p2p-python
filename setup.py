@@ -17,11 +17,17 @@ def _requires_from_file(filename):
 
 # version
 here = os.path.dirname(os.path.abspath(__file__))
-ver_path = os.path.join(here,'p2p_python', '__init__.py')
+ver_path = os.path.join(here, 'p2p_python', '__init__.py')
 version = next((line.split('=')[1].strip().replace("'", '')
                 for line in open(ver_path)
                 if line.startswith('__version__ = ')),
                '0.0.dev0')
+
+# requirements.txt
+# https://github.com/pypa/setuptools/issues/1080
+with open(os.path.join(here, 'requirements.txt')) as fp:
+    install_requires = fp.read()
+
 
 setup(
     name="p2p_python",
@@ -31,6 +37,7 @@ setup(
     description='Simple peer2peer library.',
     long_description=readme,
     packages=find_packages(),
+    install_requires=install_requires,
     include_package_data=True,
     license="MIT Licence",
     classifiers=[
