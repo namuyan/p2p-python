@@ -183,8 +183,8 @@ class Channel(Thread):
 
     def run(self):
         broadcast_que = self.pc.broadcast_que.create()
-        process_que = queue.LifoQueue()
-        election_que = queue.LifoQueue()
+        process_que = queue.Queue()
+        election_que = queue.Queue()
         Thread(target=self._process, name='2:Channel', args=(process_que,), daemon=True).start()
         Thread(target=self._election, name='3:Channel', args=(election_que,), daemon=True).start()
         count = 0

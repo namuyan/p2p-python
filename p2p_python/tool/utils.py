@@ -1,4 +1,5 @@
 from threading import Thread, Lock
+from queue import Queue, Empty, Full
 import queue
 import copy
 import time
@@ -49,6 +50,40 @@ class StackDict:
         return list(self.uuid2data.values())
 
 
+class QueueSystemDev:
+    def __init__(self):
+        self.ques = list()  # [(que, name), ..]
+        self.empty = Empty
+        self.lock = Lock()
+
+    def put(self, obj):
+        for q, name in self.ques.copy():
+            try:
+                q.put_nowait(obj)
+            except Full:
+                with self.lock:
+                    self.ques.remove((q, name))
+
+    def get(self, channel, timeout=None):
+        # caution: Don't forget remove! memory leak risk.
+        while True:
+            for q, ch in self.ques.copy():
+                if channel == ch:
+                    return q.get(timeout=timeout)
+            else:
+                que = Queue(maxsize=3000)
+                with self.lock:
+                    self.ques.append((que, channel))
+
+    def remove(self, channel):
+        for q, ch in self.ques.copy():
+            if ch == channel:
+                with self.lock:
+                    self.ques.remove((q, ch))
+                return True
+        return False
+
+
 class QueueSystem:
     def __init__(self, maxsize=100):
         self.maxsize = maxsize
@@ -56,7 +91,7 @@ class QueueSystem:
         self.lock = Lock()
 
     def create(self):
-        que = queue.LifoQueue(maxsize=self.maxsize)
+        que = queue.Queue(maxsize=self.maxsize)
         with self.lock:
             self.que.append(que)
         return que

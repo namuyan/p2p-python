@@ -70,7 +70,7 @@ class PeerClient:
 
     def start(self, s_family=socket.AF_UNSPEC, f_stabilize=True):
         processing_que = self.p2p.core_que.create()
-        broadcast_que = queue.LifoQueue()
+        broadcast_que = queue.Queue()
 
         def processing():
             self.threadid = get_ident()
@@ -428,7 +428,7 @@ class PeerClient:
             raise PeerToPeerError('timeout is zero.')
 
         # 3. Send message to a node or some nodes
-        que = queue.LifoQueue()
+        que = queue.Queue()
         self._result_ques.put(uuid, que)
         send_num = self._send_msg(item=temperate, allows=allows, f_udp=f_udp)
         if send_num == 0:
