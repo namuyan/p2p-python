@@ -386,10 +386,11 @@ class PeerClient:
             if user not in denys:
                 try:
                     self.p2p.send_msg_body(msg_body=msg_body, user=user, f_udp=f_udp)
+                    c += 1
                 except Exception as e:
-                    logging.debug("Failed send msg to {}, {}".format(user.name, e))
-                c += 1
-        return c  # 送った送信先
+                    user.warn += 1
+                    logging.debug("Failed send msg to {} \"{}\"".format(user.name, e))
+        return c  # how many send
 
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
         assert get_ident() != self.threadid, "The thread is used by p2p_python!"
