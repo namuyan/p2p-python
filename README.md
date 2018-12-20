@@ -21,8 +21,8 @@ pip install git+https://github.com/namuyan/p2p-python.git
     * [Broadcast cmd](doc/BROADCAST_CMD.md)
     * [another cmd](doc/ANOTHER_CMD.md)
 * tool
-    * [FileShare](doc/SHARE.md)
-    * [Channel](doc/CHANNEL.md)
+    * [~~FileShare~~](doc/SHARE.md)  removed
+    * [~~Channel~~](doc/CHANNEL.md)  removed
 
 ## Tutorial
 Please read first of all.
