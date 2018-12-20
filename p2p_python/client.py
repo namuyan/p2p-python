@@ -53,7 +53,7 @@ class PeerClient:
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
         assert not self.f_running, 'Already running. only one P2P process is allowed per process.'
         self.p2p = Core(host='localhost' if f_local else None, listen=listen)
-        self.broadcast_que = QueueSystem()  # BroadcastDataが流れてくる
+        self.broadcast_que = QueueStream()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self._broadcast_uuid = deque(maxlen=listen*20)  # Broadcastされたuuid
         self._user2user_route = StackDict()
@@ -69,21 +69,21 @@ class PeerClient:
         self.f_stop = True
 
     def start(self, s_family=socket.AF_UNSPEC, f_stabilize=True):
-        processing_que = self.p2p.core_que.create()
-        broadcast_que = queue.Queue()
+        temporary_que = queue.Queue(maxsize=3000)
 
         def processing():
             self.threadid = get_ident()
+            channel = 'processing'
             while not self.f_stop:
                 user = msg_body = None
                 try:
-                    user, msg_body = processing_que.get(timeout=1)
+                    user, msg_body = self.p2p.core_que.get(channel=channel, timeout=1)
                     item = bjson.loads(msg_body)
 
                     if item['type'] == T_REQUEST:
                         if item['cmd'] == ClientCmd.BROADCAST:
                             # broadcastはCheckを含む為に別スレッド
-                            broadcast_que.put((user, item))
+                            temporary_que.put((user, item))
                         else:
                             self.type_request(user=user, item=item)
                     elif item['type'] == T_RESPONSE:
@@ -100,6 +100,7 @@ class PeerClient:
                 except Exception as e:
                     logging.debug("Processing error, ({}, {}, {})"
                                   .format(user.name, msg_body, e), exc_info=Debug.P_EXCEPTION)
+            self.p2p.core_que.remove(channel)
             self.f_finish = True
             self.f_running = False
             logging.info("Close processing.")
@@ -108,7 +109,7 @@ class PeerClient:
             while not self.f_stop:
                 user = None
                 try:
-                    user, item = broadcast_que.get(timeout=1)
+                    user, item = temporary_que.get(timeout=1)
                     self.type_request(user=user, item=item)
                 except queue.Empty:
                     pass
@@ -156,7 +157,7 @@ class PeerClient:
             else:
                 user.score += 1
                 self._broadcast_uuid.append(item['uuid'])
-                self.broadcast_que.broadcast(item['data'])
+                self.broadcast_que.put(item['data'])
                 deny_list.append(user)
                 allow_list = None
                 # send ACK
@@ -450,7 +451,7 @@ class PeerClient:
         # 5. Process response
         if f_success:
             if cmd == ClientCmd.BROADCAST:
-                self.broadcast_que.broadcast(data)
+                self.broadcast_que.put(data)
             # Timeout時に raise queue.Empty
             return user, item
         else:

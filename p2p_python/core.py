@@ -14,7 +14,7 @@ from time import time, sleep
 from threading import Thread, current_thread, Lock, Event
 from nem_ed25519.base import Encryption
 from p2p_python.tool.traffic import Traffic
-from p2p_python.tool.utils import AESCipher, QueueSystem
+from p2p_python.tool.utils import AESCipher, QueueStream
 from p2p_python.config import C, V, Debug, PeerToPeerError
 from p2p_python.user import User
 
@@ -41,7 +41,7 @@ class Core:
         self.ecc = Encryption()
         self.ecc.secret_key()
         self.ecc.public_key()
-        self.core_que = QueueSystem(maxsize=listen*100)
+        self.core_que = QueueStream()
         self.listen = listen
         self.buffsize = buffsize
         self.traffic = Traffic()
@@ -99,7 +99,7 @@ class Core:
                     self.send_msg_body(msg_body=b'Pong', user=user)
                 else:
                     logging.debug("Get udp packet from {}".format(user))
-                    self.core_que.broadcast((user, msg_body))
+                    self.core_que.put((user, msg_body))
             except OSError as e:
                 logging.debug("OSError {}".format(e))
             except Exception as e:
@@ -492,7 +492,7 @@ class Core:
                     logging.debug("receive Pong from {}".format(user.name))
                     self._ping.set()
                 else:
-                    self.core_que.broadcast((user, msg_body))
+                    self.core_que.put((user, msg_body))
                 f_raise_timeout = False
 
             except socket.timeout:
