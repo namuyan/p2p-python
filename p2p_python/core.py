@@ -448,8 +448,8 @@ class Core:
                     # init message params
                     msg_bytes = bio.getvalue()
                     msg_length, initial_bytes = int.from_bytes(msg_bytes[:4], 'big'), msg_bytes[4:]
-                    bio.close()
-                    bio = BytesIO()
+                    bio.truncate(0)
+                    bio.seek(0)
                     bio_length = bio.write(initial_bytes)
                 elif bio_length == 0:
                     error = "Why bio_length is zero?, msg_length={}".format(msg_length, bio_length)
@@ -473,8 +473,8 @@ class Core:
                         # another message pushing
                         msg_length, initial_bytes = int.from_bytes(initial_bytes[:4], 'big'), initial_bytes[4:]
                         f_raise_timeout = True
-                    bio.close()
-                    bio = BytesIO()
+                    bio.truncate(0)
+                    bio.seek(0)
                     bio_length = bio.write(initial_bytes)
                 else:
                     # continue getting message
