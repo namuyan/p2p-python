@@ -298,14 +298,14 @@ class Core:
         except:
             pass
         user.close()
-        if user in self.user.copy():
-            with self.lock:
+        with self.lock:
+            if user in self.user:
                 self.user.remove(user)
-            logging.debug("remove connection to {} by \"{}\"".format(user.name, reason))
-            return True
-        else:
-            logging.debug("failed remove connection by \"{}\", not found {}".format(reason, user.name))
-            return False
+                logging.debug("remove connection to {} by '{}'".format(user.name, reason))
+                return True
+            else:
+                logging.debug("failed remove connection by '{}', not found {}".format(reason, user.name))
+                return False
 
     def send_msg_body(self, msg_body, user=None, status=200, f_udp=False, f_pro_force=False):
         # StatusCode: https://ja.wikipedia.org/wiki/HTTPステータスコード
