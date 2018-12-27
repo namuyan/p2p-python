@@ -10,11 +10,6 @@ try:
 except (IOError, UnicodeError):
     readme = ''
 
-
-def _requires_from_file(filename):
-    return open(filename).read().splitlines()
-
-
 # version
 here = os.path.dirname(os.path.abspath(__file__))
 ver_path = os.path.join(here, 'p2p_python', '__init__.py')
