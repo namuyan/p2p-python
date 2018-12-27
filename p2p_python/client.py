@@ -390,7 +390,9 @@ class PeerClient:
                     c += 1
                 except Exception as e:
                     user.warn += 1
-                    logging.debug("Failed send msg to {} \"{}\"".format(user.name, e))
+                    if 5 < user.warn:
+                        self.try_reconnect(user=user, reason="failed to send msg.")
+                    logging.debug("Failed send msg to {} '{}'".format(user.name, e))
         return c  # how many send
 
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
@@ -455,10 +457,21 @@ class PeerClient:
             # Timeout時に raise queue.Empty
             return user, item
         else:
-            if user and user.warn > 5:
-                self.p2p.remove_connection(user, "Timeout by waiting {}".format(cmd))
-            name = user.name if user else '{}users'.format(len(allows))
-            raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, name, data))
+            if user:
+                if 5 < user.warn:
+                    self.try_reconnect(user=user, reason="Timeout by waiting '{}'".format(cmd))
+                raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, user.name, data))
+            else:
+                raise TimeoutError('command timeout on broadcast to {}users, {} {}'
+                                   .format(len(allows), uuid, data))
+
+    def try_reconnect(self, user, reason=None):
+        self.p2p.remove_connection(user, reason)
+        host_port = user.get_host_port()
+        if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
+            logging.debug("Reconnect to {}:{} is success".format(user.name, host_port))
+        else:
+            logging.warning("Reconnect to {}:{} is failed".format(user.name, host_port))
 
     def send_direct_cmd(self, cmd, data, user=None, uuid=None):
         if len(self.p2p.user) == 0:
