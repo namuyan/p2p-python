@@ -47,7 +47,6 @@ class ClientCmd:
 class PeerClient:
     def __init__(self, listen=15, f_local=False):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
-        assert not self.f_running, 'Already running. only one P2P process is allowed per process.'
         # status params
         self.f_stop = False
         self.f_finish = False
