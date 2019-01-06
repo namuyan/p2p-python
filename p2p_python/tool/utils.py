@@ -12,41 +12,6 @@ from Cryptodome import Random
 from base64 import b64encode, b64decode
 
 
-class StackDict:
-    def __init__(self, limit=500):
-        self.uuid2data = dict()
-        self.lock = Lock()
-        self.limit = limit
-
-    def get(self, uuid):
-        return self.uuid2data[uuid][0]
-
-    def put(self, uuid, item):
-        with self.lock:
-            self.uuid2data[uuid] = (item, time.time())
-            if len(self.uuid2data) > self.limit:
-                self.__refresh()
-
-    def include(self, uuid):
-        return uuid in self.uuid2data
-
-    def remove(self, uuid):
-        with self.lock:
-            if uuid in self.uuid2data:
-                del self.uuid2data[uuid]
-
-    def __refresh(self):
-        limit = self.limit * 3 // 4
-        for k, v in sorted(self.uuid2data.items(), key=lambda x: x[1][1]):
-            del self.uuid2data[k]
-            if len(self.uuid2data) < limit:
-                break
-        logging.debug("StackDict refresh now.")
-
-    def get_data_list(self):
-        return list(self.uuid2data.values())
-
-
 class QueueStream:
     def __init__(self):
         self.ques = list()  # [(que, name), ..]
@@ -182,7 +147,6 @@ def version2int(v):
 
 
 __all__ = [
-    "StackDict",
     "QueueStream",
     "EventIgnition",
     "AESCipher",

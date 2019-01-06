@@ -12,6 +12,7 @@ import socket
 from time import time, sleep
 from hashlib import sha256
 from threading import Thread, get_ident
+from expiringdict import ExpiringDict
 from nem_ed25519.base import Encryption
 from p2p_python.config import C, V, Debug, PeerToPeerError
 from p2p_python.core import Core, ban_address
@@ -56,8 +57,8 @@ class PeerClient:
         self.broadcast_que = QueueStream()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self._broadcast_uuid = deque(maxlen=listen*20)  # Broadcastされたuuid
-        self._user2user_route = StackDict()
-        self._result_ques = StackDict()
+        self._user2user_route = ExpiringDict(max_len=1000, max_age_seconds=900)
+        self._result_ques = ExpiringDict(max_len=1000, max_age_seconds=900)
         self.peers = JsonDataBase(os.path.join(V.DATA_PATH, 'peer.dat'), listen//2)  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
@@ -148,7 +149,7 @@ class PeerClient:
         elif item['cmd'] == ClientCmd.BROADCAST:
             if item['uuid'] in self._broadcast_uuid:
                 return  # already get broadcast data
-            elif self._result_ques.include(item['uuid']):
+            elif item['uuid'] in self._result_ques:
                 return  # I'm broadcaster, get from ack
             elif not self.broadcast_check(item['data']):
                 user.warn += 1
@@ -190,7 +191,7 @@ class PeerClient:
             file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
             f_existence = os.path.exists(file_path)
             if 'uuid' in item['data']:
-                f_asked = self._user2user_route.include(item['data']['uuid'])
+                f_asked = bool(item['data']['uuid'] in self._user2user_route)
             else:
                 f_asked = False
             temperate['data'] = {'have': f_existence, 'asked': f_asked}
@@ -241,7 +242,7 @@ class PeerClient:
                 logging.debug("Asking, Candidate={}, ask=>{}".format(len(candidates), hopeful.name))
                 try:
                     data = {'hash': file_hash, 'asked': nears_name}
-                    self._user2user_route.put(uuid=item['uuid'], item=(user, hopeful))
+                    self._user2user_route[item['uuid']] = (user, hopeful)
                     from_client, data = self.send_command(ClientCmd.FILE_GET, data,
                                                           item['uuid'], user=hopeful, timeout=5)
                     temperate['data'] = data
@@ -262,13 +263,13 @@ class PeerClient:
                     raw = f.read()
                 temperate['type'] = T_RESPONSE
                 temperate['data'] = raw
-                self._user2user_route.put(uuid=item['uuid'], item=(user, user))
+                self._user2user_route[item['uuid']] = (user, user)
                 if 0 < self._send_msg(item=temperate, allows=[user], denys=list()):
                     logging.debug("Send file to {} {}".format(user.name, file_hash))
                 else:
                     logging.debug("Failed send file to {} {}".format(user.name, file_hash))
 
-            if self._user2user_route.include(item['uuid']):
+            if item['uuid'] in self._user2user_route:
                 return
             logging.debug("Asked file get by {}".format(user.name))
             file_hash = item['data']['hash']
@@ -297,7 +298,7 @@ class PeerClient:
                 return
             elif item['uuid'] in self._broadcast_uuid:
                 return  # already get broadcast data
-            elif self._result_ques.include(item['uuid']):
+            elif item['uuid'] in self._result_ques:
                 return  # I'm broadcaster, get from ack
 
             self._broadcast_uuid.append(item['uuid'])
@@ -352,13 +353,13 @@ class PeerClient:
         uuid = item['uuid']
         if cmd == ClientCmd.FILE_GET:
             # origin check
-            if self._user2user_route.include(uuid):
-                ship_from, ship_to = self._user2user_route.get(uuid)
+            if uuid in self._user2user_route:
+                ship_from, ship_to = self._user2user_route[uuid]
                 if ship_to != user:
                     logging.debug("Origin({}) differ from ({})".format(ship_to.name, user.name))
                     return
-        if self._result_ques.include(uuid):
-            que = self._result_ques.get(uuid)
+        if uuid in self._result_ques:
+            que = self._result_ques[uuid]
             if que:
                 que.put((user, data))
             # logging.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
@@ -369,8 +370,8 @@ class PeerClient:
         data = item['data']
         uuid = item['uuid']
 
-        if self._result_ques.include(uuid):
-            que = self._result_ques.get(uuid)
+        if uuid in self._result_ques:
+            que = self._result_ques[uuid]
             if que:
                 que.put((user, data))
             # logging.debug("Get ack from {}".format(user.name))
@@ -417,7 +418,7 @@ class PeerClient:
             allows = self.p2p.user
         elif cmd == ClientCmd.FILE_GET:
             user = user if user else random.choice(self.p2p.user)
-            self._user2user_route.put(uuid=uuid, item=(None, user))
+            self._user2user_route[uuid] = (None, user)
             allows = [user]
             timeout = 5
         elif user is None:
@@ -432,7 +433,7 @@ class PeerClient:
 
         # 3. Send message to a node or some nodes
         que = queue.Queue()
-        self._result_ques.put(uuid, que)
+        self._result_ques[uuid] = que
         send_num = self._send_msg(item=temperate, allows=allows, f_udp=f_udp)
         if send_num == 0:
             raise PeerToPeerError('We try to send no client? {}clients connected.'.format(len(self.p2p.user)))
@@ -442,12 +443,12 @@ class PeerClient:
         try:
             user, item = que.get(timeout=timeout)
             user.warn = 0
-            self._result_ques.put(uuid, None)
+            self._result_ques[uuid] = None
             f_success = True
         except queue.Empty:
             if user:
                 user.warn += 1
-            self._result_ques.put(uuid, None)
+            self._result_ques[uuid] = None
             f_success = False
 
         # 5. Process response

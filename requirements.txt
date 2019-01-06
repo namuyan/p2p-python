@@ -1,3 +1,4 @@
+expiringdict
 bjson
 pycryptodomex
 xmltodict
