@@ -710,23 +710,20 @@ class PeerClient:
                         sticky_nodes[host_port] = sticky_nodes.get(host_port, 0) + 1
                         if self.peers.remove(host_port):
                             del user_score[host_port]
-
-                # disabled mutation fnc
-                # elif len(self.p2p.user) > self.p2p.listen // 2 and random.random() < 0.01:
-                #    # Mutation
-                #    logging.debug("Mutate Score {}".format(user_score))
-                #    user = random.choice(self.p2p.user)
-                #    self.p2p.remove_connection(user)
-                #    logging.debug("Mutate connection, close {}".format(user.name))
-
                 else:
-                    sleep(60)  # Do nothing
-                    continue
+                    # check connection alive by ping-pong
+                    user = random.choice(self.p2p.user)
+                    if self.p2p.ping(user=user, f_udp=False):
+                        sleep(60)  # stable connection status
+                    else:
+                        self.try_reconnect(user=user, reason='regular ping check failed')
 
             except TimeoutError as e:
                 logging.info("Stabilize {}".format(e))
             except ConnectionError as e:
                 logging.debug("ConnectionError {}".format(e))
+            except PeerToPeerError as e:
+                logging.debug("Peer2PeerError: {}".format(e))
             except Exception as e:
                 logging.debug("Stabilize {}".format(e), exc_info=True)
         logging.error("Get out from loop of stabilize.")
