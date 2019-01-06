@@ -27,12 +27,13 @@ ban_address = list()  # deny connection address
 
 
 class Core:
-    f_stop = False
-    f_finish = False
-    f_running = False
-
     def __init__(self, host=None, listen=15, buffsize=4096):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
+        # status params
+        self.f_stop = False
+        self.f_finish = False
+        self.f_running = False
+        # working info
         self.start_time = int(time())
         self.number = 0
         self.user = list()
@@ -295,7 +296,7 @@ class Core:
         try:
             if reason:
                 user.send(b'1111'+str(reason).encode())
-        except:
+        except Exception:
             pass
         user.close()
         with self.lock:
@@ -408,9 +409,9 @@ class Core:
         error = "Close on initial check " + error
         logging.debug(error)
         try: sock.sendall(error.encode())
-        except: pass
+        except Exception: pass
         try: sock.close()
-        except: pass
+        except Exception: pass
 
     def _receive_msg(self, user):
         # Accept connection

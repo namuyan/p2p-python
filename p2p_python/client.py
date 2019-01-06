@@ -6,7 +6,6 @@ import logging
 import bjson
 import os.path
 import random
-import copy
 import queue
 from collections import deque
 import socket
@@ -45,13 +44,14 @@ class ClientCmd:
 
 
 class PeerClient:
-    f_stop = False
-    f_finish = False
-    f_running = False
-
     def __init__(self, listen=15, f_local=False):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
         assert not self.f_running, 'Already running. only one P2P process is allowed per process.'
+        # status params
+        self.f_stop = False
+        self.f_finish = False
+        self.f_running = False
+        # connection objects
         self.p2p = Core(host='localhost' if f_local else None, listen=listen)
         self.broadcast_que = QueueStream()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
@@ -509,7 +509,7 @@ class PeerClient:
             # Ask all near nodes
             if len(self.p2p.user) == 0:
                 raise FileReceiveError('No user found.')
-            choose_users = copy.copy(self.p2p.user)
+            choose_users = self.p2p.user.copy()
             random.shuffle(choose_users)
             for user in choose_users:
                 dummy, msg = self.send_command(ClientCmd.FILE_CHECK, data={'hash': file_hash, 'uuid': 0}, user=user)
