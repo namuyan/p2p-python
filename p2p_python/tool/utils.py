@@ -77,7 +77,7 @@ class AESCipher:
     def is_aes_key(key):
         try:
             return len(b64decode(key.encode())) == AES.block_size
-        except:
+        except Exception as e:
             return False
 
     @staticmethod

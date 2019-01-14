@@ -175,7 +175,7 @@ class PeerClient:
         elif item['cmd'] == ClientCmd.CHECK_REACHABLE:
             try:
                 port = item['data']['port']
-            except:
+            except Exception as e:
                 port = user.p2p_port
             temperate['data'] = is_reachable(host=user.host_port[0], port=port)
             allow_list.append(user)
@@ -536,7 +536,7 @@ class PeerClient:
             file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
             os.remove(file_path)
             return True
-        except:
+        except Exception as e:
             return False
 
     @staticmethod
@@ -567,7 +567,7 @@ class PeerClient:
                 'cert': cert}
             dummy, result = self.send_command(ClientCmd.FILE_DELETE, send_data, uuid=uuid)
             log.debug("File delete success.")
-        except:
+        except Exception as e:
             log.debug("Failed delete file.")
             pass
 

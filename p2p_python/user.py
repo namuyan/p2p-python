@@ -37,11 +37,11 @@ class User:
     def close(self):
         try:
             self.sock.shutdown(socket.SHUT_RDWR)
-        except:
+        except Exception as e:
             pass
         try:
             self.sock.close()
-        except:
+        except Exception as e:
             pass
 
     def send(self, msg):

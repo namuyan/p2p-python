@@ -285,15 +285,15 @@ class Core:
         log.debug(error)
         try:
             sock.sendall(error.encode())
-        except:
+        except Exception as e:
             pass
         try:
             sock.shutdown(socket.SHUT_RDWR)
-        except:
+        except Exception as e:
             pass
         try:
             sock.close()
-        except:
+        except Exception as e:
             pass
         return False
 

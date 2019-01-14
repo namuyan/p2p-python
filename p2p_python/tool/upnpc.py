@@ -123,7 +123,7 @@ class UpnpClient(threading.Thread):
                 (s.connect((NAME_SERVER, 80)), s.getsockname()[0], s.close())
                 for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
             ][0][1]
-        except BaseException:
+        except Exception as e:
             return '127.0.0.1'
 
     @staticmethod
@@ -138,7 +138,7 @@ class UpnpClient(threading.Thread):
         for url in network_info_providers:
             try:
                 return requests.get(url).text.lstrip().rstrip()
-            except:
+            except Exception as e:
                 continue
         else:
             log.info('cannot find global ip')
@@ -154,7 +154,7 @@ class UpnpClient(threading.Thread):
         for url in network_info_providers:
             try:
                 return requests.get(url).text.lstrip().rstrip()
-            except:
+            except Exception as e:
                 continue
         else:
             log.info('cannot find global ipv6 ip')
