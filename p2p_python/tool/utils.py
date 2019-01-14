@@ -1,15 +1,16 @@
+import p2p_python.msgpack as msgpack
 from threading import Lock
 from queue import Queue, Empty, Full
-import time
-import bjson
 import atexit
-import logging
+from logging import getLogger
 import os
 
 # For AES
 from Cryptodome.Cipher import AES
 from Cryptodome import Random
 from base64 import b64encode, b64decode
+
+log = getLogger('p2p-python')
 
 
 class QueueStream:
@@ -120,20 +121,20 @@ class JsonDataBase(dict):
 
     def save(self):
         with open(self.path, mode='bw') as fp:
-            bjson.dump(dict(self), fp=fp)
-        logging.info("JsonDataBase saved to {}".format(os.path.split(self.path)[1]))
+            msgpack.dump(dict(self), fp)
+        log.info("JsonDataBase saved to {}".format(os.path.split(self.path)[1]))
 
     def load(self):
         try:
             with open(self.path, mode='br') as fp:
-                data = bjson.load(fp=fp)
+                data = msgpack.load(fp)
                 if not isinstance(data, dict):
                     for k, v in data.items:
                         self[k] = v
         except Exception:
             with open(self.path, mode='bw') as fp:
-                bjson.dump(dict(self), fp=fp)
-        logging.info("JsonDataBase load from {}".format(os.path.split(self.path)[1]))
+                msgpack.dump(dict(self), fp)
+        log.info("JsonDataBase load from {}".format(os.path.split(self.path)[1]))
 
     def remove(self, host_port):
         if host_port in self and len(self) >= self.remove_limit:

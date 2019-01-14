@@ -29,16 +29,20 @@ class User:
 
     def __repr__(self):
         return "<User {} {}s {} score={} warn={}>".format(
-            self.name, int(time())-self.start_time, (self.host_port[0], self.p2p_port), self.score, self.warn)
+            self.name, int(time()) - self.start_time, (self.host_port[0], self.p2p_port), self.score, self.warn)
 
     def __del__(self):
         self.close()
 
     def close(self):
-        try: self.sock.shutdown(socket.SHUT_RDWR)
-        except: pass
-        try: self.sock.close()
-        except: pass
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        try:
+            self.sock.close()
+        except:
+            pass
 
     def send(self, msg):
         with self.lock:

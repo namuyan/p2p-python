@@ -1,12 +1,10 @@
-#!/user/env python3
-# -*- coding: utf-8 -*-
-
-
 import collections
 from threading import Thread
 import time
 import os.path
-import logging
+from logging import getLogger
+
+log = getLogger('p2p-python')
 
 
 class Traffic(Thread):
@@ -23,7 +21,7 @@ class Traffic(Thread):
 
     def close(self):
         self.f_stop = True
-        logging.debug("traffic close.")
+        log.debug("traffic close.")
 
     def run(self):
         count = 0
@@ -53,7 +51,7 @@ class Traffic(Thread):
                         round(down / 1000, 3)
                     ))
             except Exception as e:
-                logging.debug(e)
+                log.debug(e)
         self.f_finish = True
 
     def put_traffic_up(self, b):
