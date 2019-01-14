@@ -1,7 +1,7 @@
 import msgpack
 
 
-def default(obj):
+def only_key_check(obj):
     if isinstance(obj, dict):
         for k in obj.keys():
             if isinstance(k, str) or isinstance(k, int) or isinstance(k, bytes):
@@ -11,11 +11,11 @@ def default(obj):
     return obj
 
 
-def dump(obj, fp):
+def dump(obj, fp, default=only_key_check):
     msgpack.pack(obj, fp, use_bin_type=True, default=default)
 
 
-def dumps(obj):
+def dumps(obj, default=only_key_check):
     return msgpack.packb(obj, use_bin_type=True, default=default)
 
 

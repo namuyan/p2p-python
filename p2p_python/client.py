@@ -38,7 +38,7 @@ class ClientCmd:
 
 
 class PeerClient:
-    def __init__(self, listen=15, f_local=False):
+    def __init__(self, listen=15, f_local=False, default_hook=msgpack.only_key_check, object_hook=None):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
         # status params
         self.f_stop = False
@@ -56,6 +56,9 @@ class PeerClient:
         if Debug.F_RECODE_TRAFFIC:
             self.p2p.traffic.recode_dir = V.TMP_PATH
         self.threadid = None
+        # serializer/deserializer function
+        self.default_hook = default_hook
+        self.object_hook = object_hook
 
     def close(self):
         self.p2p.close()
@@ -71,7 +74,7 @@ class PeerClient:
                 user = msg_body = None
                 try:
                     user, msg_body = self.p2p.core_que.get(channel=channel, timeout=1)
-                    item = msgpack.loads(msg_body)
+                    item = msgpack.loads(b=msg_body, object_hook=self.object_hook)
 
                     if item['type'] == T_REQUEST:
                         if item['cmd'] == ClientCmd.BROADCAST:
@@ -224,7 +227,7 @@ class PeerClient:
             # log.debug("Get ack from {}".format(user.name))
 
     def _send_msg(self, item, allows=None, denys=None, f_udp=False):
-        msg_body = msgpack.dumps(item)
+        msg_body = msgpack.dumps(obj=item, default=self.default_hook)
         if allows is None:
             allows = self.p2p.user
         if denys is None:
