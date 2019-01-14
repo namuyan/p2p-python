@@ -1,7 +1,7 @@
 import p2p_python.msgpack as msgpack
 from threading import Lock
 from queue import Queue, Empty, Full
-import atexit
+from time import time
 from logging import getLogger
 import os
 
@@ -111,46 +111,57 @@ class AESCipher:
         return s[:-ord(s[len(s) - 1:])]
 
 
-class JsonDataBase(dict):
-    def __init__(self, path, remove_limit=3):
-        super().__init__()
-        self.remove_limit = remove_limit
+class Peers:
+    def __init__(self, path):
+        """recode all node, don't remove"""
+        self._peer = dict()  # {(host, port): header,..}
         self.path = path
-        self.load()
-        atexit.register(self.save)
+        self.cleanup()
 
-    def save(self):
-        with open(self.path, mode='bw') as fp:
-            msgpack.dump(dict(self), fp)
-        log.info("JsonDataBase saved to {}".format(os.path.split(self.path)[1]))
-
-    def load(self):
-        try:
-            with open(self.path, mode='br') as fp:
-                data = msgpack.load(fp)
-                if not isinstance(data, dict):
-                    for k, v in data.items:
-                        self[k] = v
-        except Exception:
-            with open(self.path, mode='bw') as fp:
-                msgpack.dump(dict(self), fp)
-        log.info("JsonDataBase load from {}".format(os.path.split(self.path)[1]))
+    def get(self, host_port):
+        return self._peer.get(tuple(host_port))
 
     def remove(self, host_port):
-        if host_port in self and len(self) >= self.remove_limit:
-            del self[host_port]
-            return True
-        return False
+        del self._peer[tuple(host_port)]
 
+    def __contains__(self, item):
+        return tuple(item) in self._peer
 
-def version2int(v):
-    return sum([pow(1000, i) * int(d) for i, d in enumerate(reversed(v.split('.')))])
+    def __len__(self):
+        return len(self._peer)
+
+    def keys(self):
+        yield from self._peer.keys()
+
+    def copy(self):
+        return self._peer.copy()
+
+    def add(self, host_port, data):
+        self._peer[tuple(host_port)] = data
+        self._save(host_port, data)
+
+    def _save(self, host_port, data):
+        with open(self.path, mode='ba') as fp:
+            msgpack.dump((host_port, data), fp)
+
+    def cleanup(self):
+        time_limit = int(time() - 3600 * 24 * 30)
+        try:
+            with open(self.path, mode='br') as fp:
+                for k, v in msgpack.stream_unpacker(fp):
+                    # if time_limit < v['last_seen']:
+                    #    self._peer[tuple(k)] = v
+                    self._peer[tuple(k)] = v
+        except Exception:
+            pass
+        with open(self.path, mode='bw') as fp:
+            for k, v in self._peer.items():
+                msgpack.dump((k, v), fp)
 
 
 __all__ = [
     "QueueStream",
     "EventIgnition",
     "AESCipher",
-    "JsonDataBase",
-    "version2int"
+    "Peers",
 ]

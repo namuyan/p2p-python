@@ -56,7 +56,7 @@ class PeerClient:
         self._broadcast_uuid = deque(maxlen=listen * 20)  # Broadcastされたuuid
         self._user2user_route = ExpiringDict(max_len=1000, max_age_seconds=900)
         self._result_ques = ExpiringDict(max_len=1000, max_age_seconds=900)
-        self.peers = JsonDataBase(os.path.join(V.DATA_PATH, 'peer.dat'), listen // 2)  # {(host, port): header,..}
+        self.peers = Peers(os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
             self.p2p.traffic.recode_dir = V.TMP_PATH
@@ -165,7 +165,7 @@ class PeerClient:
 
         elif item['cmd'] == ClientCmd.GET_PEER_INFO:
             # [[(host,port), header],..]
-            temperate['data'] = self.peers.copy()
+            temperate['data'] = list(self.peers.copy().items())
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.GET_NEARS:
@@ -591,7 +591,7 @@ class PeerClient:
                 if host_port in ignore_peers:
                     self.peers.remove(host_port)
                     continue
-                header = self.peers[host_port]
+                header = self.peers.get(host_port)
                 if header['p2p_accept']:
                     if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
                         need -= 1
@@ -633,7 +633,7 @@ class PeerClient:
 
                 # peer list update (user)
                 for user in self.p2p.user:
-                    self.peers[user.get_host_port()] = user.serialize()
+                    self.peers.add(user.get_host_port(), user.serialize())
 
                 # update near info
                 sample_user, item = self.send_command(cmd=ClientCmd.GET_NEARS)

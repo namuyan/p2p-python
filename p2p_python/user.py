@@ -6,7 +6,7 @@ from threading import Lock
 class User:
     __slots__ = ("name", "client_ver", "network_ver", "p2p_accept", "p2p_udp_accept",
                  "p2p_port", "start_time", "number", "sock", "host_port",
-                 "aeskey", "sock_type", "neers", "score", "warn", "lock")
+                 "aeskey", "sock_type", "neers", "score", "warn", "last_seen", "lock")
 
     def __init__(self, number, sock, host_port, aeskey, sock_type):
         self.name = None
@@ -25,6 +25,7 @@ class User:
         # user experience
         self.score = 0
         self.warn = 0
+        self.last_seen = int(time())
         self.lock = Lock()
 
     def __repr__(self):
@@ -68,7 +69,8 @@ class User:
              'p2p_accept': self.p2p_accept,
              'p2p_udp_accept': self.p2p_udp_accept,
              'p2p_port': self.p2p_port,
-             'start_time': self.start_time}
+             'start_time': self.start_time,
+             'last_seen': self.last_seen}
         return r
 
     def deserialize(self, s):
@@ -79,6 +81,7 @@ class User:
         self.p2p_udp_accept = s.get('p2p_udp_accept', False)
         self.p2p_port = s['p2p_port']
         self.start_time = s['start_time']
+        self.last_seen = s.get('last_seen', self.last_seen)
 
     def get_host_port(self):
         # connection先
