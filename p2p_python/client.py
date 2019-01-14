@@ -86,6 +86,7 @@ class PeerClient:
                             self.type_request(user=user, item=item)
                     elif item['type'] == T_RESPONSE:
                         self.type_response(user=user, item=item)
+                        user.last_seen = int(time())
                     elif item['type'] == T_ACK:
                         self.type_ack(user=user, item=item)
                     else:
