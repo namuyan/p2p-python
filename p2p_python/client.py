@@ -4,11 +4,9 @@ import queue
 from collections import deque
 import socket
 from time import time, sleep
-from hashlib import sha256
 from threading import Thread, get_ident
 from expiringdict import ExpiringDict
-from nem_ed25519.base import Encryption
-from p2p_python.config import C, V, Debug, PeerToPeerError
+from p2p_python.config import V, Debug, PeerToPeerError
 from p2p_python.core import Core, ban_address
 from p2p_python.utils import is_reachable
 from p2p_python.tool.utils import *
@@ -36,9 +34,6 @@ class ClientCmd:
     GET_PEER_INFO = 'cmd/client/get-peer-info'  # 隣接ノードの情報を取得
     GET_NEARS = 'cmd/client/get-nears'  # ピアリストを取得
     CHECK_REACHABLE = 'cmd/client/check-reachable'  # 外部からServerに到達できるかチェック
-    FILE_CHECK = 'cmd/client/file-check'  # Fileが存在するかHashをチェック
-    FILE_GET = 'cmd/client/file-get'  # Fileの転送を依頼
-    FILE_DELETE = 'cmd/client/file-delete'  # 全ノードからFileを消去
     DIRECT_CMD = 'cmd/client/direct-cmd'  # 隣接ノードに直接CMDを打つ
 
 
@@ -182,145 +177,6 @@ class PeerClient:
             temperate['data'] = is_reachable(host=user.host_port[0], port=port)
             allow_list.append(user)
 
-        elif item['cmd'] == ClientCmd.FILE_CHECK:
-            # {'hash': hash, 'uuid': uuid}
-            file_hash = item['data']['hash']
-            file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-            f_existence = os.path.exists(file_path)
-            if 'uuid' in item['data']:
-                f_asked = bool(item['data']['uuid'] in self._user2user_route)
-            else:
-                f_asked = False
-            temperate['data'] = {'have': f_existence, 'asked': f_asked}
-            allow_list.append(user)
-
-        elif item['cmd'] == ClientCmd.FILE_GET:
-            def asking():
-                # ファイル要求元のNodeに近いNode群を無視する
-                nears_name = set(user_.name for user_ in self.p2p.user)
-                best_name = list(nears_name - already_asked_user)
-                random.shuffle(best_name)
-                nears_name = list(nears_name)
-                random.shuffle(nears_name)
-                # nearを最後に探索するように並び替え
-                try_to_ask_name = best_name + nears_name
-
-                # ファイル所持Nodeを見つけたら即コマンド送る、それ以外は候補をリスト化
-                candidates = list()
-                for ask_name in try_to_ask_name:
-                    try:
-                        ask_user = self.p2p.name2user(ask_name)
-                        if ask_user is None:
-                            continue
-                        send_data = {'hash': file_hash, 'uuid': item['uuid']}
-                        dummy, data = self.send_command(cmd=ClientCmd.FILE_CHECK, user=ask_user,
-                                                        data=send_data, timeout=2)
-                    except Exception as e:
-                        log.debug("Check file existence one by one, %s", e)
-                        continue
-                    if data['have']:
-                        # ファイル所持Nodeを発見したのでGETを即送信
-                        hopeful = ask_user
-                        break
-                    elif not data['asked']:
-                        candidates.append(ask_user)
-                    else:
-                        pass
-                else:
-                    # 候補がいなければここで探索終了
-                    if len(candidates) == 0:
-                        temperate['type'] = T_RESPONSE
-                        self._send_msg(item=temperate, allows=[user], denys=list())
-                        log.debug("Asking, stop asking file.")
-                        return
-                    else:
-                        hopeful = random.choice(candidates)  # 一番新しいのを候補
-
-                log.debug("Asking, Candidate={}, ask=>{}".format(len(candidates), hopeful.name))
-                try:
-                    data = {'hash': file_hash, 'asked': nears_name}
-                    self._user2user_route[item['uuid']] = (user, hopeful)
-                    from_client, data = self.send_command(ClientCmd.FILE_GET, data,
-                                                          item['uuid'], user=hopeful, timeout=5)
-                    temperate['data'] = data
-                    if data is None:
-                        log.debug("Asking failed from {} {}".format(hopeful.name, file_hash))
-                    else:
-                        log.debug("Asking success {} {}".format(hopeful.name, file_hash))
-                except Exception as e:
-                    log.debug("Asking raised {} {} {}".format(hopeful.name, file_hash, e))
-                    temperate['data'] = None
-                temperate['type'] = T_RESPONSE
-                count = self._send_msg(item=temperate, allows=[user], denys=list())
-                log.debug("Response file to {} {}({})".format(user.name, count, file_hash))
-                return
-
-            def sending():
-                with open(file_path, mode='br') as f:
-                    raw = f.read()
-                temperate['type'] = T_RESPONSE
-                temperate['data'] = raw
-                self._user2user_route[item['uuid']] = (user, user)
-                if 0 < self._send_msg(item=temperate, allows=[user], denys=list()):
-                    log.debug("Send file to {} {}".format(user.name, file_hash))
-                else:
-                    log.debug("Failed send file to {} {}".format(user.name, file_hash))
-
-            if item['uuid'] in self._user2user_route:
-                return
-            log.debug("Asked file get by {}".format(user.name))
-            file_hash = item['data']['hash']
-            already_asked_user = set(item['data']['asked'])
-            file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-            # When you have file, sending. When you don't have file, asking
-            if os.path.exists(file_path):
-                Thread(target=sending, name='Sending', daemon=True).start()
-            elif V.F_FILE_CONTINUE_ASKING:
-                # Default disable
-                Thread(target=asking, name='Asking', daemon=True).start()
-
-        elif item['cmd'] == ClientCmd.FILE_DELETE:
-            item_ = item['data']
-            file_hash = item_['hash']
-            signer_pk = item_['signer']
-            sign = item_['sign']
-            cert_sign = item_['cert']['sign']
-            master_pk = item_['cert']['master']
-            cert_start = item_['cert']['start']
-            cert_stop = item_['cert']['stop']
-
-            if not (cert_start < int(time()) < cert_stop):
-                return  # old signature
-            elif master_pk not in C.MASTER_KEYS:
-                return
-            elif item['uuid'] in self._broadcast_uuid:
-                return  # already get broadcast data
-            elif item['uuid'] in self._result_ques:
-                return  # I'm broadcaster, get from ack
-
-            self._broadcast_uuid.append(item['uuid'])
-            cert_raw = msgpack.dumps((master_pk, signer_pk, cert_start, cert_stop))
-            sign_raw = msgpack.dumps((file_hash, item['uuid']))
-            deny_list.append(user)
-            allow_list = None
-            # send ACK
-            ack_list.append(user)
-            # send Response
-            temperate['type'] = T_REQUEST
-            temperate['data'] = item['data']
-            # delete file check
-            try:
-                log.debug("1:Delete request {}".format(file_hash))
-                ecc = Encryption()
-                ecc.pk = master_pk  # 署名者の署名者チェック
-                ecc.verify(msg=cert_raw, signature=cert_sign)
-                ecc.pk = signer_pk  # 署名者チェック
-                ecc.verify(msg=sign_raw, signature=sign)
-                if self.remove_file(file_hash):
-                    log.info("2:Delete request accepted!")
-            except ValueError:
-                allow_list = list()  # No sending
-
         elif item['cmd'] == ClientCmd.DIRECT_CMD:
             def direct_cmd():
                 data = item['data']
@@ -349,13 +205,6 @@ class PeerClient:
         cmd = item['cmd']
         data = item['data']
         uuid = item['uuid']
-        if cmd == ClientCmd.FILE_GET:
-            # origin check
-            if uuid in self._user2user_route:
-                ship_from, ship_to = self._user2user_route[uuid]
-                if ship_to != user:
-                    log.debug("Origin({}) differ from ({})".format(ship_to.name, user.name))
-                    return
         if uuid in self._result_ques:
             que = self._result_ques[uuid]
             if que:
@@ -412,13 +261,6 @@ class PeerClient:
         elif cmd == ClientCmd.BROADCAST:
             allows = self.p2p.user
             f_udp = True
-        elif cmd == ClientCmd.FILE_DELETE:
-            allows = self.p2p.user
-        elif cmd == ClientCmd.FILE_GET:
-            user = user if user else random.choice(self.p2p.user)
-            self._user2user_route[uuid] = (None, user)
-            allows = [user]
-            timeout = 5
         elif user is None:
             user = random.choice(self.p2p.user)
             allows = [user]
@@ -483,95 +325,6 @@ class PeerClient:
             'uuid': uuid}
         dummy, item = self.send_command(ClientCmd.DIRECT_CMD, send_data, uuid, user)
         return user, item
-
-    @staticmethod
-    def share_file(data):
-        assert isinstance(data, bytes), "You need input raw binary data"
-        assert len(data) <= C.MAX_RECEIVE_SIZE, "Your data({}kb) exceed MAX({}kb) size." \
-            .format(len(data) // 1000, C.MAX_RECEIVE_SIZE // 1000)
-
-        file_hash = sha256(data).hexdigest()
-        file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-        with open(file_path, mode='bw') as f:
-            f.write(data)
-        return file_hash
-
-    def get_file(self, file_hash, only_check=False):
-        file_hash = file_hash.lower()
-        file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-        if only_check:
-            return os.path.exists(file_path)
-        elif os.path.exists(file_path):
-            with open(file_path, mode='br') as fp:
-                return fp.read()
-        else:
-            # Ask all near nodes
-            if len(self.p2p.user) == 0:
-                raise FileReceiveError('No user found.')
-            choose_users = self.p2p.user.copy()
-            random.shuffle(choose_users)
-            for user in choose_users:
-                dummy, msg = self.send_command(ClientCmd.FILE_CHECK, data={'hash': file_hash, 'uuid': 0}, user=user)
-                if msg['have']:
-                    hopeful = user
-                    break
-            else:
-                hopeful = random.choice(self.p2p.user)
-
-            asked_nears = [user.name for user in self.p2p.user]
-            log.debug("Ask file send to {}".format(hopeful.name))
-            dummy, raw = self.send_command(
-                cmd=ClientCmd.FILE_GET, data={'hash': file_hash, 'asked': asked_nears}, user=hopeful)
-            if raw is None:
-                raise FileReceiveError('Peers send me Null data. Please retry.')
-            if sha256(raw).hexdigest() == file_hash:
-                with open(file_path, mode='bw') as f:
-                    f.write(raw)
-                return True if only_check else raw
-            else:
-                raise FileReceiveError('File hash don\'t match. Please retry.')
-
-    @staticmethod
-    def remove_file(file_hash):
-        try:
-            file_hash = file_hash.lower()
-            file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-            os.remove(file_path)
-            return True
-        except Exception as e:
-            return False
-
-    @staticmethod
-    def create_cert(master_sk, signer_pk, cert_start, cert_stop):
-        assert int(time()) < cert_start < cert_stop, 'wrong time setting of cert.'
-        master_ecc = Encryption()
-        master_ecc.sk = master_sk
-        cert_raw = msgpack.dumps((master_ecc.pk, signer_pk, cert_start, cert_stop))
-        cert = {
-            'master': master_ecc.pk,
-            'start': cert_start,
-            'stop': cert_stop,
-            'sign': master_ecc.sign(cert_raw, encode='hex')}
-        return cert
-
-    def remove_file_by_master(self, signer_sk, cert, file_hash):
-        file_hash = file_hash.lower()
-        file_path = os.path.join(V.DATA_PATH, 'file.' + file_hash + '.dat')
-        uuid = random.randint(10, 99999999)
-        signer_ecc = Encryption()
-        signer_ecc.sk = signer_sk
-        try:
-            os.remove(file_path)
-            sign_raw = msgpack.dumps((file_hash, uuid))
-            send_data = {
-                'signer': signer_ecc.pk,
-                'sign': signer_ecc.sign(msg=sign_raw, encode='hex'),
-                'cert': cert}
-            dummy, result = self.send_command(ClientCmd.FILE_DELETE, send_data, uuid=uuid)
-            log.debug("File delete success.")
-        except Exception as e:
-            log.debug("Failed delete file.")
-            pass
 
     def stabilize(self):
         sleep(5)
