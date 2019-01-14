@@ -79,6 +79,7 @@ class Core:
         def tcp_server_listen(server_sock, mask):
             try:
                 sock, host_port = server_sock.accept()
+                sock.setblocking(True)
                 Thread(target=self._initial_connection_check,
                        args=(sock, host_port), daemon=True).start()
                 log.info("Server accept from {}".format(host_port))
@@ -113,6 +114,7 @@ class Core:
                 af, sock_type, proto, canon_name, sa = res
                 try:
                     sock = socket.socket(af, sock_type, proto)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 except OSError as e:
                     log.debug("Failed tcp socket.socket {}".format(sa))
                     continue
@@ -121,6 +123,7 @@ class Core:
                     sock.listen(self.listen)
                     sock.setblocking(False)
                 except OSError as e:
+                    sock.shutdown(socket.SHUT_RDWR)
                     sock.close()
                     log.debug("Failed tcp bind or listen {}".format(sa))
                     continue
@@ -214,6 +217,7 @@ class Core:
                         sock.setproxy(socks.PROXY_TYPE_SOCKS5, V.TOR_CONNECTION[0], V.TOR_CONNECTION[1])
                     else:
                         sock = socket.socket(af, socktype, proto)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 except OSError:
                     continue
                 sock.settimeout(10)
@@ -222,7 +226,11 @@ class Core:
                     sock.connect(host_port)
                     break
                 except OSError:
-                    sock.close()
+                    try:
+                        sock.shutdown(socket.SHUT_RDWR)
+                        sock.close()
+                    except Exception:
+                        pass
                     continue
             else:
                 # create no connection
@@ -279,20 +287,20 @@ class Core:
             error = "NewConnectionError {} {}".format(host_port, e)
         except ConnectionRefusedError as e:
             error = "ConnectionRefusedError {} {}".format(host_port, e)
+        except ValueError as e:
+            error = "ValueError: {} {}".format(host_port, e)
         except Exception as e:
+            log.debug("NewConnectionError", exc_info=True)
             error = "NewConnectionError {} {}".format(host_port, e)
 
         # close socket
-        log.debug(error)
+        log.error(error)
         try:
             sock.sendall(error.encode())
         except Exception as e:
             pass
         try:
             sock.shutdown(socket.SHUT_RDWR)
-        except Exception as e:
-            pass
-        try:
             sock.close()
         except Exception as e:
             pass
@@ -412,15 +420,17 @@ class Core:
         except socket.timeout:
             error = "socket.timeout"
         except Exception as e:
-            error = "Exception as {}".format(e)
+            log.debug("InitialConnCheck", exc_info=True)
+            error = "InitialConnCheck: {}".format(e)
         # close socket
         error = "Close on initial check " + error
-        log.debug(error)
+        log.error(error)
         try:
             sock.sendall(error.encode())
         except Exception:
             pass
         try:
+            sock.shutdown(socket.SHUT_RDWR)
             sock.close()
         except Exception:
             pass
@@ -544,6 +554,7 @@ class Core:
         except OSError:
             f_tcp = False
         try:
+            sock.shutdown(socket.SHUT_RDWR)
             sock.close()
         except OSError:
             pass

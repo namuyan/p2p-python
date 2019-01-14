@@ -93,7 +93,11 @@ class Peers:
         return self._peer.get(tuple(host_port))
 
     def remove(self, host_port):
-        del self._peer[tuple(host_port)]
+        host_port = tuple(host_port)
+        if host_port in self._peer:
+            del self._peer[tuple(host_port)]
+            return True
+        return False
 
     def __contains__(self, item):
         return tuple(item) in self._peer
