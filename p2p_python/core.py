@@ -7,13 +7,14 @@ import socket
 import socks
 import zlib
 import selectors
+from queue import Queue
 from io import BytesIO
 from time import time, sleep
 from logging import getLogger
 from threading import Thread, current_thread, Lock, Event
 from nem_ed25519.base import Encryption
 from p2p_python.tool.traffic import Traffic
-from p2p_python.tool.utils import AESCipher, QueueStream
+from p2p_python.tool.utils import AESCipher
 from p2p_python.config import C, V, Debug, PeerToPeerError
 from p2p_python.user import User
 import p2p_python.msgpack as msgpack
@@ -43,7 +44,7 @@ class Core:
         self.ecc = Encryption()
         self.ecc.secret_key()
         self.ecc.public_key()
-        self.core_que = QueueStream()
+        self.core_que = Queue(maxsize=200)
         self.listen = listen
         self.buffsize = buffsize
         self.traffic = Traffic()

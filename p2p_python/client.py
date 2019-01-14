@@ -46,7 +46,6 @@ class PeerClient:
         self.f_running = False
         # connection objects
         self.p2p = Core(host='localhost' if f_local else None, listen=listen)
-        self.broadcast_que = QueueStream()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self._broadcast_uuid = deque(maxlen=listen * 20)  # Broadcastされたuuid
         self._user2user_route = ExpiringDict(max_len=1000, max_age_seconds=900)
@@ -69,11 +68,10 @@ class PeerClient:
 
         def processing():
             self.threadid = get_ident()
-            channel = 'processing'
             while not self.f_stop:
                 user = msg_body = None
                 try:
-                    user, msg_body = self.p2p.core_que.get(channel=channel, timeout=1)
+                    user, msg_body = self.p2p.core_que.get(timeout=1)
                     item = msgpack.loads(b=msg_body, object_hook=self.object_hook)
 
                     if item['type'] == T_REQUEST:
@@ -95,7 +93,6 @@ class PeerClient:
                     self.p2p.remove_connection(user)
                     log.debug("Processing error, ({}, {}, {})"
                               .format(user.name, msg_body, e), exc_info=Debug.P_EXCEPTION)
-            self.p2p.core_que.remove(channel)
             self.f_finish = True
             self.f_running = False
             log.info("Close processing.")
@@ -152,7 +149,6 @@ class PeerClient:
             else:
                 user.score += 1
                 self._broadcast_uuid.append(item['uuid'])
-                self.broadcast_que.put(item['data'])
                 deny_list.append(user)
                 allow_list = None
                 # send ACK
@@ -296,9 +292,6 @@ class PeerClient:
 
         # 5. Process response
         if f_success:
-            if cmd == ClientCmd.BROADCAST:
-                self.broadcast_que.put(data)
-            # Timeout時に raise queue.Empty
             return user, item
         else:
             if user:

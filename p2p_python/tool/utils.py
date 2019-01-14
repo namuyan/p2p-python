@@ -13,40 +13,6 @@ from base64 import b64encode, b64decode
 log = getLogger('p2p-python')
 
 
-class QueueStream:
-    def __init__(self):
-        self.ques = list()  # [(que, name), ..]
-        self.empty = Empty
-        self.lock = Lock()
-
-    def put(self, obj):
-        for q, name in self.ques.copy():
-            try:
-                q.put_nowait(obj)
-            except Full:
-                with self.lock:
-                    self.ques.remove((q, name))
-
-    def get(self, channel, timeout=None):
-        # caution: Don't forget remove! memory leak risk.
-        while True:
-            for q, ch in self.ques.copy():
-                if channel == ch:
-                    return q.get(timeout=timeout)
-            else:
-                que = Queue(maxsize=3000)
-                with self.lock:
-                    self.ques.append((que, channel))
-
-    def remove(self, channel):
-        for q, ch in self.ques.copy():
-            if ch == channel:
-                with self.lock:
-                    self.ques.remove((q, ch))
-                return True
-        return False
-
-
 class EventIgnition:
     def __init__(self):
         self.event = dict()
@@ -160,7 +126,6 @@ class Peers:
 
 
 __all__ = [
-    "QueueStream",
     "EventIgnition",
     "AESCipher",
     "Peers",
