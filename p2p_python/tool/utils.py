@@ -17,8 +17,8 @@ class EventIgnition:
     def __init__(self):
         self.event = dict()
 
-    def addevent(self, cmd, f):
-        self.event[cmd] = f
+    def addevent(self, cmd, f, post_f=None):
+        self.event[cmd] = (f, post_f)
 
     def removevent(self, cmd):
         if cmd in self.event:
@@ -29,7 +29,12 @@ class EventIgnition:
 
     def work(self, cmd, data):
         if cmd in self.event:
-            return self.event[cmd](data)
+            f, post_f = self.event[cmd]
+            r = f(data)
+            if post_f:
+                return post_f(r)
+            else:
+                return r
         else:
             raise KeyError('Not found cmd "{}"'.format(cmd))
 
