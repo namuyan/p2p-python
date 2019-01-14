@@ -90,5 +90,6 @@ class User:
         return tuple(host_port)
 
     def update_neers(self, items):
-        # {(host,port): header, ..}
-        self.neers = items
+        # [[(host,port), header],..]
+        for host_port, header in items:
+            self.neers[tuple(host_port)] = header

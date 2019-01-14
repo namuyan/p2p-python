@@ -169,7 +169,8 @@ class PeerClient:
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.GET_NEARS:
-            temperate['data'] = {user.get_host_port(): user.serialize() for user in self.p2p.user}
+            # [[(host,port), header],..]
+            temperate['data'] = [(user.get_host_port(), user.serialize()) for user in self.p2p.user]
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.CHECK_REACHABLE:
