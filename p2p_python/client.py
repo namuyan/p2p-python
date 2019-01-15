@@ -11,7 +11,7 @@ from p2p_python.core import Core, ban_address
 from p2p_python.utils import is_reachable
 from p2p_python.tool.utils import *
 from p2p_python.tool.upnpc import UpnpClient
-import p2p_python.msgpack as msgpack
+from p2p_python.serializer import *
 from logging import getLogger
 
 log = getLogger('p2p-python')
@@ -38,7 +38,7 @@ class ClientCmd:
 
 
 class PeerClient:
-    def __init__(self, listen=15, f_local=False, default_hook=msgpack.only_key_check, object_hook=None):
+    def __init__(self, listen=15, f_local=False, default_hook=only_key_check, object_hook=None):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
         # status params
         self.f_stop = False
@@ -72,7 +72,7 @@ class PeerClient:
                 user = msg_body = None
                 try:
                     user, msg_body = self.p2p.core_que.get(timeout=1)
-                    item = msgpack.loads(b=msg_body, object_hook=self.object_hook)
+                    item = loads(b=msg_body, object_hook=self.object_hook)
 
                     if item['type'] == T_REQUEST:
                         if item['cmd'] == ClientCmd.BROADCAST:
@@ -223,7 +223,7 @@ class PeerClient:
             # log.debug("Get ack from {}".format(user.name))
 
     def _send_msg(self, item, allows=None, denys=None, f_udp=False):
-        msg_body = msgpack.dumps(obj=item, default=self.default_hook)
+        msg_body = dumps(obj=item, default=self.default_hook)
         if allows is None:
             allows = self.p2p.user
         if denys is None:

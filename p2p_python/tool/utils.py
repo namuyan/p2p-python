@@ -1,6 +1,4 @@
-import p2p_python.msgpack as msgpack
-from threading import Lock
-from queue import Queue, Empty, Full
+from p2p_python.serializer import stream_unpacker, dump
 from time import time
 from logging import getLogger
 import os
@@ -113,17 +111,14 @@ class Peers:
 
     def add(self, host_port, data):
         self._peer[tuple(host_port)] = data
-        self._save(host_port, data)
-
-    def _save(self, host_port, data):
         with open(self.path, mode='ba') as fp:
-            msgpack.dump((host_port, data), fp)
+            dump((host_port, data), fp)
 
     def cleanup(self):
         time_limit = int(time() - 3600 * 24 * 30)
         try:
             with open(self.path, mode='br') as fp:
-                for k, v in msgpack.stream_unpacker(fp):
+                for k, v in stream_unpacker(fp):
                     # if time_limit < v['last_seen']:
                     #    self._peer[tuple(k)] = v
                     self._peer[tuple(k)] = v
@@ -131,7 +126,7 @@ class Peers:
             pass
         with open(self.path, mode='bw') as fp:
             for k, v in self._peer.items():
-                msgpack.dump((k, v), fp)
+                dump((k, v), fp)
 
 
 __all__ = [

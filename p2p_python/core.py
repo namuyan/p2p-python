@@ -17,7 +17,7 @@ from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher
 from p2p_python.config import C, V, Debug, PeerToPeerError
 from p2p_python.user import User
-import p2p_python.msgpack as msgpack
+from p2p_python.msgpack import dumps
 
 # constant
 SERVER_SIDE = 'Server'
@@ -335,7 +335,7 @@ class Core:
         elif len(msg_body) > C.MAX_RECEIVE_SIZE + 5000:
             error = 'Max message size is {}kb (You try {}Kb)'.format(
                 round(C.MAX_RECEIVE_SIZE / 1000000, 3), round(len(msg_body) / 1000000, 3))
-            self.send_msg_body(msg_body=msgpack.dumps(error), user=user, status=500)
+            self.send_msg_body(msg_body=dumps(error), user=user, status=500)
             raise ConnectionRefusedError(error)
         elif user is None:
             user = random.choice(self.user)

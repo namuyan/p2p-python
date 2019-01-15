@@ -32,6 +32,7 @@ def stream_unpacker(fp, object_hook=None):
 
 
 __all__ = [
+    "only_key_check",
     "dump",
     "dumps",
     "load",
