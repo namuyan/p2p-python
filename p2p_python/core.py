@@ -11,7 +11,7 @@ from queue import Queue
 from io import BytesIO
 from time import time, sleep
 from logging import getLogger
-from threading import Thread, current_thread, Lock, Event
+from threading import Thread, current_thread, RLock, Event
 from nem_ed25519.base import Encryption
 from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher
@@ -39,7 +39,7 @@ class Core:
         self.start_time = int(time())
         self.number = 0
         self.user = list()
-        self.lock = Lock()
+        self.lock = RLock()
         self.host = host  # local=>'localhost', 'global'=>None
         self.ecc = Encryption()
         self.ecc.secret_key()
@@ -200,7 +200,8 @@ class Core:
             'p2p_accept': V.P2P_ACCEPT,
             'p2p_udp_accept': V.P2P_UDP_ACCEPT,
             'p2p_port': V.P2P_PORT,
-            'start_time': self.start_time}
+            'start_time': self.start_time,
+            'last_seen': int(time())}
 
     def create_connection(self, host, port):
         sock = host_port = None
@@ -220,6 +221,7 @@ class Core:
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 except OSError:
                     continue
+                sock.setblocking(True)
                 sock.settimeout(10)
                 # Connection
                 try:
@@ -236,6 +238,10 @@ class Core:
                 # create no connection
                 return False
             log.debug("Success connection create to {}".format(host_port))
+            # 平文を受取る
+            msg = sock.recv(self.buffsize)
+            if msg != b'hello':
+                raise PeerToPeerError('first plain msg not correct {}'.format(msg))
             # ヘッダーを送る
             send = json.dumps(self.get_server_header()).encode()
             sock.sendall(send)
@@ -370,6 +376,8 @@ class Core:
         current_thread().setName('InitCheck')
         sock.settimeout(10)
         try:
+            # 平文を送る
+            sock.sendall(b'hello')
             # ヘッダーを受取る
             received = sock.recv(self.buffsize)
             if len(received) == 0:
@@ -388,7 +396,7 @@ class Core:
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を取得する
-            receive = new_user.sock.recv(self.buffsize)
+            receive = sock.recv(self.buffsize)
             self.traffic.put_traffic_down(receive)
             if len(receive) == 0:
                 raise ConnectionAbortedError('received msg is zero.')
@@ -396,10 +404,10 @@ class Core:
             # AESKEYとHeaderを暗号化して送る
             encrypted = self.ecc.encrypt(recipient_pk=public_key, msg=json.dumps(
                 {'aes-key': new_user.aeskey, 'header': self.get_server_header()}).encode(), encode='raw')
-            new_user.send(encrypted)
+            sock.send(encrypted)
             self.traffic.put_traffic_up(encrypted)
             # Accept信号を受け取る
-            encrypted = new_user.sock.recv(self.buffsize)
+            encrypted = sock.recv(self.buffsize)
             self.traffic.put_traffic_down(encrypted)
             receive = AESCipher.decrypt(new_user.aeskey, encrypted)
             if receive != b'accept':
@@ -452,7 +460,13 @@ class Core:
             self.user.append(user)
         log.info("Accept connection \"{}\"".format(user.name))
 
-        user.sock.settimeout(5.0)
+        try:
+            user.sock.settimeout(5.0)
+        except OSError:
+            error = 'settimeout failed on _receive_msg'
+            self.remove_connection(user, error)
+            log.info(error)
+            return
         bio = BytesIO()  # Warning: don't use initial_bytes, same duplicate ID used?
         bio_length = 0
         msg_length = 0
