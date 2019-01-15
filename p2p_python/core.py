@@ -17,7 +17,7 @@ from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher
 from p2p_python.config import C, V, Debug, PeerToPeerError
 from p2p_python.user import User
-from p2p_python.msgpack import dumps
+from p2p_python.serializer import dumps
 
 # constant
 SERVER_SIDE = 'Server'
