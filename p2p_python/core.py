@@ -123,8 +123,11 @@ class Core:
                     sock.listen(self.listen)
                     sock.setblocking(False)
                 except OSError as e:
-                    sock.shutdown(socket.SHUT_RDWR)
-                    sock.close()
+                    try:
+                        sock.shutdown(socket.SHUT_RDWR)
+                        sock.close()
+                    except OSError:
+                        pass
                     log.debug("Failed tcp bind or listen {}".format(sa))
                     continue
                 if af == socket.AF_INET or af == socket.AF_INET6:
@@ -231,7 +234,7 @@ class Core:
                     try:
                         sock.shutdown(socket.SHUT_RDWR)
                         sock.close()
-                    except Exception:
+                    except OSError:
                         pass
                     continue
             else:
@@ -308,7 +311,7 @@ class Core:
         try:
             sock.shutdown(socket.SHUT_RDWR)
             sock.close()
-        except Exception as e:
+        except OSError:
             pass
         return False
 
@@ -440,7 +443,7 @@ class Core:
         try:
             sock.shutdown(socket.SHUT_RDWR)
             sock.close()
-        except Exception:
+        except OSError:
             pass
 
     def _receive_msg(self, user):
