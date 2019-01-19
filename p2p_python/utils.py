@@ -32,7 +32,7 @@ def setup_p2p_params(network_ver, p2p_port, p2p_accept=True,
         Debug.F_LONG_MSG_INFO = True
     # directory params
     if V.DATA_PATH is not None:
-        raise BaseException('Already setup params.')
+        raise Exception('Already setup params.')
     V.DATA_PATH = os.path.join(os.path.expanduser('~'), 'p2p-python')
     V.TMP_PATH = os.path.join(gettempdir(), 'p2p-python')
     if not os.path.exists(V.DATA_PATH):

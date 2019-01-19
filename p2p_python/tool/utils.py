@@ -1,9 +1,6 @@
-from threading import Lock
-from queue import Queue, Empty, Full
-import time
-import bjson
-import atexit
-import logging
+from p2p_python.serializer import stream_unpacker, dump
+from time import time
+from logging import getLogger
 import os
 
 # For AES
@@ -11,47 +8,15 @@ from Cryptodome.Cipher import AES
 from Cryptodome import Random
 from base64 import b64encode, b64decode
 
-
-class QueueStream:
-    def __init__(self):
-        self.ques = list()  # [(que, name), ..]
-        self.empty = Empty
-        self.lock = Lock()
-
-    def put(self, obj):
-        for q, name in self.ques.copy():
-            try:
-                q.put_nowait(obj)
-            except Full:
-                with self.lock:
-                    self.ques.remove((q, name))
-
-    def get(self, channel, timeout=None):
-        # caution: Don't forget remove! memory leak risk.
-        while True:
-            for q, ch in self.ques.copy():
-                if channel == ch:
-                    return q.get(timeout=timeout)
-            else:
-                que = Queue(maxsize=3000)
-                with self.lock:
-                    self.ques.append((que, channel))
-
-    def remove(self, channel):
-        for q, ch in self.ques.copy():
-            if ch == channel:
-                with self.lock:
-                    self.ques.remove((q, ch))
-                return True
-        return False
+log = getLogger('p2p-python')
 
 
 class EventIgnition:
     def __init__(self):
         self.event = dict()
 
-    def addevent(self, cmd, f):
-        self.event[cmd] = f
+    def addevent(self, cmd, f, post_f=None):
+        self.event[cmd] = (f, post_f)
 
     def removevent(self, cmd):
         if cmd in self.event:
@@ -62,7 +27,12 @@ class EventIgnition:
 
     def work(self, cmd, data):
         if cmd in self.event:
-            return self.event[cmd](data)
+            f, post_f = self.event[cmd]
+            r = f(data)
+            if post_f:
+                return post_f(r)
+            else:
+                return r
         else:
             raise KeyError('Not found cmd "{}"'.format(cmd))
 
@@ -76,7 +46,7 @@ class AESCipher:
     def is_aes_key(key):
         try:
             return len(b64decode(key.encode())) == AES.block_size
-        except:
+        except Exception as e:
             return False
 
     @staticmethod
@@ -110,46 +80,57 @@ class AESCipher:
         return s[:-ord(s[len(s) - 1:])]
 
 
-class JsonDataBase(dict):
-    def __init__(self, path, remove_limit=3):
-        super().__init__()
-        self.remove_limit = remove_limit
+class Peers:
+    def __init__(self, path):
+        """recode all node, don't remove"""
+        self._peer = dict()  # {(host, port): header,..}
         self.path = path
-        self.load()
-        atexit.register(self.save)
+        self.cleanup()
 
-    def save(self):
-        with open(self.path, mode='bw') as fp:
-            bjson.dump(dict(self), fp=fp)
-        logging.info("JsonDataBase saved to {}".format(os.path.split(self.path)[1]))
-
-    def load(self):
-        try:
-            with open(self.path, mode='br') as fp:
-                data = bjson.load(fp=fp)
-                if not isinstance(data, dict):
-                    for k, v in data.items:
-                        self[k] = v
-        except Exception:
-            with open(self.path, mode='bw') as fp:
-                bjson.dump(dict(self), fp=fp)
-        logging.info("JsonDataBase load from {}".format(os.path.split(self.path)[1]))
+    def get(self, host_port):
+        return self._peer.get(tuple(host_port))
 
     def remove(self, host_port):
-        if host_port in self and len(self) >= self.remove_limit:
-            del self[host_port]
+        host_port = tuple(host_port)
+        if host_port in self._peer:
+            del self._peer[tuple(host_port)]
             return True
         return False
 
+    def __contains__(self, item):
+        return tuple(item) in self._peer
 
-def version2int(v):
-    return sum([pow(1000, i) * int(d) for i, d in enumerate(reversed(v.split('.')))])
+    def __len__(self):
+        return len(self._peer)
+
+    def keys(self):
+        yield from self._peer.keys()
+
+    def copy(self):
+        return self._peer.copy()
+
+    def add(self, host_port, data):
+        self._peer[tuple(host_port)] = data
+        with open(self.path, mode='ba') as fp:
+            dump((host_port, data), fp)
+
+    def cleanup(self):
+        time_limit = int(time() - 3600 * 24 * 30)
+        try:
+            with open(self.path, mode='br') as fp:
+                for k, v in stream_unpacker(fp):
+                    # if time_limit < v['last_seen']:
+                    #    self._peer[tuple(k)] = v
+                    self._peer[tuple(k)] = v
+        except Exception:
+            pass
+        with open(self.path, mode='bw') as fp:
+            for k, v in self._peer.items():
+                dump((k, v), fp)
 
 
 __all__ = [
-    "QueueStream",
     "EventIgnition",
     "AESCipher",
-    "JsonDataBase",
-    "version2int"
+    "Peers",
 ]

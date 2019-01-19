@@ -1,24 +1,20 @@
-#!/user/env python3
-# -*- coding: utf-8 -*-
-
-
-import logging
-import bjson
 import os.path
 import random
 import queue
 from collections import deque
 import socket
 from time import time, sleep
-from hashlib import sha256
 from threading import Thread, get_ident
 from expiringdict import ExpiringDict
-from nem_ed25519.base import Encryption
-from p2p_python.config import C, V, Debug, PeerToPeerError
+from p2p_python.config import V, Debug, PeerToPeerError
 from p2p_python.core import Core, ban_address
 from p2p_python.utils import is_reachable
 from p2p_python.tool.utils import *
 from p2p_python.tool.upnpc import UpnpClient
+from p2p_python.serializer import *
+from logging import getLogger
+
+log = getLogger('p2p-python')
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
 GLOBAL_IPV4 = UpnpClient.get_global_ip()
@@ -38,14 +34,11 @@ class ClientCmd:
     GET_PEER_INFO = 'cmd/client/get-peer-info'  # 隣接ノードの情報を取得
     GET_NEARS = 'cmd/client/get-nears'  # ピアリストを取得
     CHECK_REACHABLE = 'cmd/client/check-reachable'  # 外部からServerに到達できるかチェック
-    FILE_CHECK = 'cmd/client/file-check'  # Fileが存在するかHashをチェック
-    FILE_GET = 'cmd/client/file-get'  # Fileの転送を依頼
-    FILE_DELETE = 'cmd/client/file-delete'  # 全ノードからFileを消去
     DIRECT_CMD = 'cmd/client/direct-cmd'  # 隣接ノードに直接CMDを打つ
 
 
 class PeerClient:
-    def __init__(self, listen=15, f_local=False):
+    def __init__(self, listen=15, f_local=False, default_hook=only_key_check, object_hook=None):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
         # status params
         self.f_stop = False
@@ -53,16 +46,18 @@ class PeerClient:
         self.f_running = False
         # connection objects
         self.p2p = Core(host='localhost' if f_local else None, listen=listen)
-        self.broadcast_que = QueueStream()  # BroadcastDataが流れてくる
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
-        self._broadcast_uuid = deque(maxlen=listen*20)  # Broadcastされたuuid
+        self._broadcast_uuid = deque(maxlen=listen * 20)  # Broadcastされたuuid
         self._user2user_route = ExpiringDict(max_len=1000, max_age_seconds=900)
         self._result_ques = ExpiringDict(max_len=1000, max_age_seconds=900)
-        self.peers = JsonDataBase(os.path.join(V.DATA_PATH, 'peer.dat'), listen//2)  # {(host, port): header,..}
+        self.peers = Peers(os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
             self.p2p.traffic.recode_dir = V.TMP_PATH
         self.threadid = None
+        # serializer/deserializer function
+        self.default_hook = default_hook
+        self.object_hook = object_hook
 
     def close(self):
         self.p2p.close()
@@ -73,12 +68,11 @@ class PeerClient:
 
         def processing():
             self.threadid = get_ident()
-            channel = 'processing'
             while not self.f_stop:
                 user = msg_body = None
                 try:
-                    user, msg_body = self.p2p.core_que.get(channel=channel, timeout=1)
-                    item = bjson.loads(msg_body)
+                    user, msg_body = self.p2p.core_que.get(timeout=1)
+                    item = loads(b=msg_body, object_hook=self.object_hook)
 
                     if item['type'] == T_REQUEST:
                         if item['cmd'] == ClientCmd.BROADCAST:
@@ -88,22 +82,20 @@ class PeerClient:
                             self.type_request(user=user, item=item)
                     elif item['type'] == T_RESPONSE:
                         self.type_response(user=user, item=item)
+                        user.last_seen = int(time())
                     elif item['type'] == T_ACK:
                         self.type_ack(user=user, item=item)
                     else:
-                        logging.debug("Unknown type {}".format(item['type']))
-                except bjson.BJsonBaseError:
-                    self.p2p.remove_connection(user)
-                    logging.debug("BJsonBaseError", exc_info=Debug.P_EXCEPTION)
+                        log.debug("Unknown type {}".format(item['type']))
                 except queue.Empty:
                     pass
                 except Exception as e:
-                    logging.debug("Processing error, ({}, {}, {})"
-                                  .format(user.name, msg_body, e), exc_info=Debug.P_EXCEPTION)
-            self.p2p.core_que.remove(channel)
+                    self.p2p.remove_connection(user)
+                    log.debug("Processing error, ({}, {}, {})"
+                              .format(user.name, msg_body, e), exc_info=Debug.P_EXCEPTION)
             self.f_finish = True
             self.f_running = False
-            logging.info("Close processing.")
+            log.info("Close processing.")
 
         def broadcast():
             while not self.f_stop:
@@ -114,9 +106,9 @@ class PeerClient:
                 except queue.Empty:
                     pass
                 except Exception as e:
-                    logging.debug("Processing error, ({}, {})"
-                                  .format(user.name, e), exc_info=Debug.P_EXCEPTION)
-            logging.info("Close broadcast.")
+                    log.debug("Processing error, ({}, {})"
+                              .format(user.name, e), exc_info=Debug.P_EXCEPTION)
+            log.info("Close broadcast.")
 
         self.f_running = True
         self.p2p.start(s_family)
@@ -125,7 +117,7 @@ class PeerClient:
         # Processing
         Thread(target=processing, name='Process', daemon=True).start()
         Thread(target=broadcast, name="Broadcast", daemon=True).start()
-        logging.info("start user, name is {}, port is {}".format(V.SERVER_NAME, V.P2P_PORT))
+        log.info("start user, name is {}, port is {}".format(V.SERVER_NAME, V.P2P_PORT))
 
     def type_request(self, user, item):
         temperate = {
@@ -157,7 +149,6 @@ class PeerClient:
             else:
                 user.score += 1
                 self._broadcast_uuid.append(item['uuid'])
-                self.broadcast_que.put(item['data'])
                 deny_list.append(user)
                 allow_list = None
                 # send ACK
@@ -169,165 +160,28 @@ class PeerClient:
 
         elif item['cmd'] == ClientCmd.GET_PEER_INFO:
             # [[(host,port), header],..]
-            temperate['data'] = self.peers.copy()
+            temperate['data'] = list(self.peers.copy().items())
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.GET_NEARS:
-            temperate['data'] = {user.get_host_port(): user.serialize() for user in self.p2p.user}
+            # [[(host,port), header],..]
+            temperate['data'] = [(user.get_host_port(), user.serialize()) for user in self.p2p.user]
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.CHECK_REACHABLE:
             try:
                 port = item['data']['port']
-            except:
+            except Exception as e:
                 port = user.p2p_port
             temperate['data'] = is_reachable(host=user.host_port[0], port=port)
             allow_list.append(user)
-
-        elif item['cmd'] == ClientCmd.FILE_CHECK:
-            # {'hash': hash, 'uuid': uuid}
-            file_hash = item['data']['hash']
-            file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-            f_existence = os.path.exists(file_path)
-            if 'uuid' in item['data']:
-                f_asked = bool(item['data']['uuid'] in self._user2user_route)
-            else:
-                f_asked = False
-            temperate['data'] = {'have': f_existence, 'asked': f_asked}
-            allow_list.append(user)
-
-        elif item['cmd'] == ClientCmd.FILE_GET:
-            def asking():
-                # ファイル要求元のNodeに近いNode群を無視する
-                nears_name = set(user_.name for user_ in self.p2p.user)
-                best_name = list(nears_name - already_asked_user)
-                random.shuffle(best_name)
-                nears_name = list(nears_name)
-                random.shuffle(nears_name)
-                # nearを最後に探索するように並び替え
-                try_to_ask_name = best_name + nears_name
-
-                # ファイル所持Nodeを見つけたら即コマンド送る、それ以外は候補をリスト化
-                candidates = list()
-                for ask_name in try_to_ask_name:
-                    try:
-                        ask_user = self.p2p.name2user(ask_name)
-                        if ask_user is None:
-                            continue
-                        send_data = {'hash': file_hash, 'uuid': item['uuid']}
-                        dummy, data = self.send_command(cmd=ClientCmd.FILE_CHECK, user=ask_user,
-                                                        data=send_data, timeout=2)
-                    except Exception as e:
-                        logging.debug("Check file existence one by one, %s", e)
-                        continue
-                    if data['have']:
-                        # ファイル所持Nodeを発見したのでGETを即送信
-                        hopeful = ask_user
-                        break
-                    elif not data['asked']:
-                        candidates.append(ask_user)
-                    else:
-                        pass
-                else:
-                    # 候補がいなければここで探索終了
-                    if len(candidates) == 0:
-                        temperate['type'] = T_RESPONSE
-                        self._send_msg(item=temperate, allows=[user], denys=list())
-                        logging.debug("Asking, stop asking file.")
-                        return
-                    else:
-                        hopeful = random.choice(candidates)  # 一番新しいのを候補
-
-                logging.debug("Asking, Candidate={}, ask=>{}".format(len(candidates), hopeful.name))
-                try:
-                    data = {'hash': file_hash, 'asked': nears_name}
-                    self._user2user_route[item['uuid']] = (user, hopeful)
-                    from_client, data = self.send_command(ClientCmd.FILE_GET, data,
-                                                          item['uuid'], user=hopeful, timeout=5)
-                    temperate['data'] = data
-                    if data is None:
-                        logging.debug("Asking failed from {} {}".format(hopeful.name, file_hash))
-                    else:
-                        logging.debug("Asking success {} {}".format(hopeful.name, file_hash))
-                except Exception as e:
-                    logging.debug("Asking raised {} {} {}".format(hopeful.name, file_hash, e))
-                    temperate['data'] = None
-                temperate['type'] = T_RESPONSE
-                count = self._send_msg(item=temperate, allows=[user], denys=list())
-                logging.debug("Response file to {} {}({})".format(user.name, count, file_hash))
-                return
-
-            def sending():
-                with open(file_path, mode='br') as f:
-                    raw = f.read()
-                temperate['type'] = T_RESPONSE
-                temperate['data'] = raw
-                self._user2user_route[item['uuid']] = (user, user)
-                if 0 < self._send_msg(item=temperate, allows=[user], denys=list()):
-                    logging.debug("Send file to {} {}".format(user.name, file_hash))
-                else:
-                    logging.debug("Failed send file to {} {}".format(user.name, file_hash))
-
-            if item['uuid'] in self._user2user_route:
-                return
-            logging.debug("Asked file get by {}".format(user.name))
-            file_hash = item['data']['hash']
-            already_asked_user = set(item['data']['asked'])
-            file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-            # When you have file, sending. When you don't have file, asking
-            if os.path.exists(file_path):
-                Thread(target=sending, name='Sending', daemon=True).start()
-            elif V.F_FILE_CONTINUE_ASKING:
-                # Default disable
-                Thread(target=asking, name='Asking', daemon=True).start()
-
-        elif item['cmd'] == ClientCmd.FILE_DELETE:
-            item_ = item['data']
-            file_hash = item_['hash']
-            signer_pk = item_['signer']
-            sign = item_['sign']
-            cert_sign = item_['cert']['sign']
-            master_pk = item_['cert']['master']
-            cert_start = item_['cert']['start']
-            cert_stop = item_['cert']['stop']
-
-            if not(cert_start < int(time()) < cert_stop):
-                return  # old signature
-            elif master_pk not in C.MASTER_KEYS:
-                return
-            elif item['uuid'] in self._broadcast_uuid:
-                return  # already get broadcast data
-            elif item['uuid'] in self._result_ques:
-                return  # I'm broadcaster, get from ack
-
-            self._broadcast_uuid.append(item['uuid'])
-            cert_raw = bjson.dumps((master_pk, signer_pk, cert_start, cert_stop), compress=False)
-            sign_raw = bjson.dumps((file_hash, item['uuid']), compress=False)
-            deny_list.append(user)
-            allow_list = None
-            # send ACK
-            ack_list.append(user)
-            # send Response
-            temperate['type'] = T_REQUEST
-            temperate['data'] = item['data']
-            # delete file check
-            try:
-                logging.debug("1:Delete request {}".format(file_hash))
-                ecc = Encryption()
-                ecc.pk = master_pk  # 署名者の署名者チェック
-                ecc.verify(msg=cert_raw, signature=cert_sign)
-                ecc.pk = signer_pk  # 署名者チェック
-                ecc.verify(msg=sign_raw, signature=sign)
-                if self.remove_file(file_hash):
-                    logging.info("2:Delete request accepted!")
-            except ValueError:
-                allow_list = list()  # No sending
 
         elif item['cmd'] == ClientCmd.DIRECT_CMD:
             def direct_cmd():
                 data = item['data']
                 temperate['data'] = self.event.work(cmd=data['cmd'], data=data['data'])
                 self._send_msg(item=temperate, allows=[user])
+
             if 'cmd' in item['data'] and item['data']['cmd'] in self.event:
                 Thread(target=direct_cmd, name='DirectCmd', daemon=True).start()
         else:
@@ -343,26 +197,19 @@ class PeerClient:
             ack_count = self._send_msg(item=temperate, allows=ack_list)
         # debug
         if Debug.P_RECEIVE_MSG_INFO:
-            logging.debug("Reply to request {} All={}, Send={}, Ack={}"
-                          .format(temperate['cmd'], len(self.p2p.user), send_count, ack_count))
+            log.debug("Reply to request {} All={}, Send={}, Ack={}"
+                      .format(temperate['cmd'], len(self.p2p.user), send_count, ack_count))
 
     def type_response(self, user, item):
         cmd = item['cmd']
         data = item['data']
         uuid = item['uuid']
-        if cmd == ClientCmd.FILE_GET:
-            # origin check
-            if uuid in self._user2user_route:
-                ship_from, ship_to = self._user2user_route[uuid]
-                if ship_to != user:
-                    logging.debug("Origin({}) differ from ({})".format(ship_to.name, user.name))
-                    return
         if uuid in self._result_ques:
             que = self._result_ques[uuid]
             if que:
                 que.put((user, data))
-            # logging.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
-            # logging.debug("2:Data is '{}'".format(trim_msg(str(data), 80)))
+            # log.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
+            # log.debug("2:Data is '{}'".format(trim_msg(str(data), 80)))
 
     def type_ack(self, user, item):
         cmd = item['cmd']
@@ -373,10 +220,10 @@ class PeerClient:
             que = self._result_ques[uuid]
             if que:
                 que.put((user, data))
-            # logging.debug("Get ack from {}".format(user.name))
+            # log.debug("Get ack from {}".format(user.name))
 
     def _send_msg(self, item, allows=None, denys=None, f_udp=False):
-        msg_body = bjson.dumps(item)
+        msg_body = dumps(obj=item, default=self.default_hook)
         if allows is None:
             allows = self.p2p.user
         if denys is None:
@@ -392,7 +239,7 @@ class PeerClient:
                     user.warn += 1
                     if 5 < user.warn:
                         self.try_reconnect(user=user, reason="failed to send msg.")
-                    logging.debug("Failed send msg to {} '{}'".format(user.name, e))
+                    log.debug("Failed send msg to {} '{}'".format(user.name, e))
         return c  # how many send
 
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
@@ -413,13 +260,6 @@ class PeerClient:
         elif cmd == ClientCmd.BROADCAST:
             allows = self.p2p.user
             f_udp = True
-        elif cmd == ClientCmd.FILE_DELETE:
-            allows = self.p2p.user
-        elif cmd == ClientCmd.FILE_GET:
-            user = user if user else random.choice(self.p2p.user)
-            self._user2user_route[uuid] = (None, user)
-            allows = [user]
-            timeout = 5
         elif user is None:
             user = random.choice(self.p2p.user)
             allows = [user]
@@ -452,9 +292,6 @@ class PeerClient:
 
         # 5. Process response
         if f_success:
-            if cmd == ClientCmd.BROADCAST:
-                self.broadcast_que.put(data)
-            # Timeout時に raise queue.Empty
             return user, item
         else:
             if user:
@@ -469,9 +306,9 @@ class PeerClient:
         self.p2p.remove_connection(user, reason)
         host_port = user.get_host_port()
         if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
-            logging.debug("Reconnect to {}:{} is success".format(user.name, host_port))
+            log.debug("Reconnect to {}:{} is success".format(user.name, host_port))
         else:
-            logging.warning("Reconnect to {}:{} is failed".format(user.name, host_port))
+            log.warning("Reconnect to {}:{} is failed".format(user.name, host_port))
 
     def send_direct_cmd(self, cmd, data, user=None, uuid=None):
         if len(self.p2p.user) == 0:
@@ -485,98 +322,9 @@ class PeerClient:
         dummy, item = self.send_command(ClientCmd.DIRECT_CMD, send_data, uuid, user)
         return user, item
 
-    @staticmethod
-    def share_file(data):
-        assert isinstance(data, bytes), "You need input raw binary data"
-        assert len(data) <= C.MAX_RECEIVE_SIZE, "Your data({}kb) exceed MAX({}kb) size."\
-            .format(len(data) // 1000, C.MAX_RECEIVE_SIZE // 1000)
-
-        file_hash = sha256(data).hexdigest()
-        file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-        with open(file_path, mode='bw') as f:
-            f.write(data)
-        return file_hash
-
-    def get_file(self, file_hash, only_check=False):
-        file_hash = file_hash.lower()
-        file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-        if only_check:
-            return os.path.exists(file_path)
-        elif os.path.exists(file_path):
-            with open(file_path, mode='br') as fp:
-                return fp.read()
-        else:
-            # Ask all near nodes
-            if len(self.p2p.user) == 0:
-                raise FileReceiveError('No user found.')
-            choose_users = self.p2p.user.copy()
-            random.shuffle(choose_users)
-            for user in choose_users:
-                dummy, msg = self.send_command(ClientCmd.FILE_CHECK, data={'hash': file_hash, 'uuid': 0}, user=user)
-                if msg['have']:
-                    hopeful = user
-                    break
-            else:
-                hopeful = random.choice(self.p2p.user)
-
-            asked_nears = [user.name for user in self.p2p.user]
-            logging.debug("Ask file send to {}".format(hopeful.name))
-            dummy, raw = self.send_command(
-                cmd=ClientCmd.FILE_GET, data={'hash': file_hash, 'asked': asked_nears}, user=hopeful)
-            if raw is None:
-                raise FileReceiveError('Peers send me Null data. Please retry.')
-            if sha256(raw).hexdigest() == file_hash:
-                with open(file_path, mode='bw') as f:
-                    f.write(raw)
-                return True if only_check else raw
-            else:
-                raise FileReceiveError('File hash don\'t match. Please retry.')
-
-    @staticmethod
-    def remove_file(file_hash):
-        try:
-            file_hash = file_hash.lower()
-            file_path = os.path.join(V.TMP_PATH, 'file.' + file_hash + '.dat')
-            os.remove(file_path)
-            return True
-        except:
-            return False
-
-    @staticmethod
-    def create_cert(master_sk, signer_pk, cert_start, cert_stop):
-        assert int(time()) < cert_start < cert_stop, 'wrong time setting of cert.'
-        master_ecc = Encryption()
-        master_ecc.sk = master_sk
-        cert_raw = bjson.dumps((master_ecc.pk, signer_pk, cert_start, cert_stop), compress=False)
-        cert = {
-            'master': master_ecc.pk,
-            'start': cert_start,
-            'stop': cert_stop,
-            'sign': master_ecc.sign(cert_raw, encode='hex')}
-        return cert
-
-    def remove_file_by_master(self, signer_sk, cert, file_hash):
-        file_hash = file_hash.lower()
-        file_path = os.path.join(V.DATA_PATH, 'file.' + file_hash + '.dat')
-        uuid = random.randint(10, 99999999)
-        signer_ecc = Encryption()
-        signer_ecc.sk = signer_sk
-        try:
-            os.remove(file_path)
-            sign_raw = bjson.dumps((file_hash, uuid), compress=False)
-            send_data = {
-                'signer': signer_ecc.pk,
-                'sign': signer_ecc.sign(msg=sign_raw, encode='hex'),
-                'cert': cert}
-            dummy, result = self.send_command(ClientCmd.FILE_DELETE, send_data, uuid=uuid)
-            logging.debug("File delete success.")
-        except:
-            logging.debug("Failed delete file.")
-            pass
-
     def stabilize(self):
         sleep(5)
-        logging.info("start stabilize.")
+        log.info("start stabilize.")
         ignore_peers = {
             (GLOBAL_IPV4, V.P2P_PORT),
             (GLOBAL_IPV6, V.P2P_PORT),
@@ -584,17 +332,17 @@ class PeerClient:
             ('127.0.0.1', V.P2P_PORT),
             ('::1', V.P2P_PORT)}
         if len(self.peers) == 0:
-            logging.info("peer list is zero, need bootnode.")
+            log.info("peer list is zero, need bootnode.")
         else:
             need = max(1, self.p2p.listen // 2)
-            logging.info("Connect first nodes, min %d users." % need)
+            log.info("Connect first nodes, min %d users." % need)
             peer_host_port = list(self.peers.keys())
             random.shuffle(peer_host_port)
             for host_port in peer_host_port:
                 if host_port in ignore_peers:
                     self.peers.remove(host_port)
                     continue
-                header = self.peers[host_port]
+                header = self.peers.get(host_port)
                 if header['p2p_accept']:
                     if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
                         need -= 1
@@ -617,7 +365,7 @@ class PeerClient:
             else:
                 sleep(1.5 * (1 + random.random()) * len(self.p2p.user))
             if count % 24 == 1 and len(sticky_nodes) > 0:
-                logging.debug("Clean sticky_nodes. [{}=>0]".format(len(sticky_nodes)))
+                log.debug("Clean sticky_nodes. [{}=>0]".format(len(sticky_nodes)))
                 sticky_nodes.clear()
             try:
                 if len(self.p2p.user) == 0 and len(self.peers) > 0:
@@ -636,7 +384,7 @@ class PeerClient:
 
                 # peer list update (user)
                 for user in self.p2p.user:
-                    self.peers[user.get_host_port()] = user.serialize()
+                    self.peers.add(user.get_host_port(), user.serialize())
 
                 # update near info
                 sample_user, item = self.send_command(cmd=ClientCmd.GET_NEARS)
@@ -661,14 +409,14 @@ class PeerClient:
                 # Action join or remove or nothing
                 if len(self.p2p.user) > self.p2p.listen * 2 // 3:  # Remove
                     # スコアの下位半分を取得
-                    sorted_score = sorted(user_score.items(), key=lambda x: x[1])[:len(user_score)//3]
+                    sorted_score = sorted(user_score.items(), key=lambda x: x[1])[:len(user_score) // 3]
                     # 既接続のもののみを取得
                     sorted_score = [(host_port, score) for host_port, score in sorted_score
                                     if host_port in [user.get_host_port() for user in self.p2p.user]]
                     if len(sorted_score) == 0:
                         sleep(10)
                         continue
-                    logging.debug("Remove Score {}".format(sorted_score))
+                    log.debug("Remove Score {}".format(sorted_score))
                     host_port, score = random.choice(sorted_score)
                     user = self.p2p.host_port2user(host_port)
                     if user is None:
@@ -676,15 +424,15 @@ class PeerClient:
                     elif len(user.neers) < need_connection:
                         pass  # 接続数が少なすぎるノード
                     elif self.p2p.remove_connection(user):
-                        logging.debug("Remove connection {} {}".format(host_port, score))
+                        log.debug("Remove connection {} {}".format(host_port, score))
                     else:
-                        logging.debug("Failed remove connection. Already disconnected?")
+                        log.debug("Failed remove connection. Already disconnected?")
                         if self.peers.remove(host_port):
                             del user_score[host_port]
 
                 elif len(self.p2p.user) < self.p2p.listen * 2 // 3:  # Join
                     # スコア上位半分を取得
-                    sorted_score = sorted(user_score.items(), key=lambda x: x[1], reverse=True)[:len(user_score)//3]
+                    sorted_score = sorted(user_score.items(), key=lambda x: x[1], reverse=True)[:len(user_score) // 3]
                     # 既接続を除く
                     sorted_score = [(host_port, score) for host_port, score in sorted_score
                                     if host_port not in [user.get_host_port() for user in self.p2p.user]
@@ -692,7 +440,7 @@ class PeerClient:
                     if len(sorted_score) == 0:
                         sleep(10)
                         continue
-                    logging.debug("Join Score {}".format(sorted_score))
+                    log.debug("Join Score {}".format(sorted_score))
                     host_port, score = random.choice(sorted_score)
                     if self.p2p.host_port2user(host_port):
                         continue  # 既に接続済み
@@ -704,9 +452,9 @@ class PeerClient:
                     elif host_port[0] in ban_address:
                         continue  # BAN address
                     elif self.p2p.create_connection(host=host_port[0], port=host_port[1]):
-                        logging.debug("New connection {}".format(host_port))
+                        log.debug("New connection {}".format(host_port))
                     else:
-                        logging.info("Failed connect, remove {}".format(host_port))
+                        log.info("Failed connect, remove {}".format(host_port))
                         sticky_nodes[host_port] = sticky_nodes.get(host_port, 0) + 1
                         if self.peers.remove(host_port):
                             del user_score[host_port]
@@ -719,14 +467,14 @@ class PeerClient:
                         self.try_reconnect(user=user, reason='regular ping check failed')
 
             except TimeoutError as e:
-                logging.info("Stabilize {}".format(e))
+                log.info("Stabilize {}".format(e))
             except ConnectionError as e:
-                logging.debug("ConnectionError {}".format(e))
+                log.debug("ConnectionError {}".format(e))
             except PeerToPeerError as e:
-                logging.debug("Peer2PeerError: {}".format(e))
+                log.debug("Peer2PeerError: {}".format(e))
             except Exception as e:
-                logging.debug("Stabilize {}".format(e), exc_info=True)
-        logging.error("Get out from loop of stabilize.")
+                log.debug("Stabilize {}".format(e), exc_info=True)
+        log.error("Get out from loop of stabilize.")
 
     @staticmethod
     def broadcast_check(data):

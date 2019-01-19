@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import requests
 from urllib.request import Request, urlopen
 import xmltodict
-import logging
+from logging import getLogger
 import threading
 import time
 import random
@@ -19,6 +19,7 @@ UPnPによるNAT超え
 rebased
 """
 
+log = getLogger('p2p-python')
 NAME_SERVER = '8.8.8.8'
 
 
@@ -44,11 +45,11 @@ class UpnpClient(threading.Thread):
             external_ip = self.soap_get_ip(soap_url)
             local_ip = self.get_localhost_ip()
         except Exception as e:
-            logging.info("UPnPC don't work!" % e)
+            log.info("UPnPC don't work!" % e)
             self.finish = True
             return
         if external_ip == local_ip:
-            logging.info("This client is on local environment!")
+            log.info("This client is on local environment!")
             self.finish = True
             return
 
@@ -84,26 +85,26 @@ class UpnpClient(threading.Thread):
                             soap_url, (p_out, p_in, local_ip, protocol, self.OPEN_SPAN, "Hello"))
 
             except Exception as e:
-                logging.error(e)
+                log.error(e)
 
         else:
             # Finish, Close all port
             for p_out, p_in, protocol in ports:
                 self.soap_delete_mapping(soap_url, (p_in, protocol))
                 self.waiting(5)
-            logging.info("Close UPnPC")
+            log.info("Close UPnPC")
             self.finish = True
 
     def add_open_port(self, out_in_protocol):
         assert len(out_in_protocol) == 3, "Need three args"
-        logging.info("Open port %d=>%d %s" % out_in_protocol)
+        log.info("Open port %d=>%d %s" % out_in_protocol)
         if out_in_protocol not in self.opens:
             self.opens.add(out_in_protocol)
             self.f_wait = False
 
     def remove_open_port(self, out_in_protocol):
         assert len(out_in_protocol) == 3, "Need three args"
-        logging.info("Close port %d=>%d %s" % out_in_protocol)
+        log.info("Close port %d=>%d %s" % out_in_protocol)
         if out_in_protocol in self.opens:
             self.opens.remove(out_in_protocol)
             self.f_wait = False
@@ -121,8 +122,8 @@ class UpnpClient(threading.Thread):
             return [
                 (s.connect((NAME_SERVER, 80)), s.getsockname()[0], s.close())
                 for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
-                ][0][1]
-        except BaseException:
+            ][0][1]
+        except Exception as e:
             return '127.0.0.1'
 
     @staticmethod
@@ -137,10 +138,10 @@ class UpnpClient(threading.Thread):
         for url in network_info_providers:
             try:
                 return requests.get(url).text.lstrip().rstrip()
-            except:
+            except Exception as e:
                 continue
         else:
-            logging.info('cannot find global ip')
+            log.info('cannot find global ip')
             return ""
 
     @staticmethod
@@ -153,12 +154,11 @@ class UpnpClient(threading.Thread):
         for url in network_info_providers:
             try:
                 return requests.get(url).text.lstrip().rstrip()
-            except:
+            except Exception as e:
                 continue
         else:
-            logging.info('cannot find global ipv6 ip')
+            log.info('cannot find global ipv6 ip')
             return ""
-
 
     @staticmethod
     def cast_rooter_request(host='239.255.255.250', port=1900):
@@ -234,7 +234,7 @@ class UpnpClient(threading.Thread):
                 ports.append(dict(result['s:Envelope']['s:Body']['u:GetGenericPortMappingEntryResponse']))
             except Exception as e:
                 if '500' not in str(e):
-                    logging.debug(e)
+                    log.debug(e)
                 break
             i_d += 1
         return ports
@@ -275,10 +275,10 @@ class UpnpClient(threading.Thread):
 
         try:
             result = xmltodict.parse(urlopen(req).read().decode())
-            logging.debug(result["s:Envelope"]["s:Body"]["u:AddPortMappingResponse"]["@xmlns:u"])
+            log.debug(result["s:Envelope"]["s:Body"]["u:AddPortMappingResponse"]["@xmlns:u"])
             return True
         except Exception as e:
-            logging.error(e)
+            log.error(e)
             return False
 
     @staticmethod
@@ -307,6 +307,6 @@ class UpnpClient(threading.Thread):
 
         try:
             result = xmltodict.parse(urlopen(req).read().decode())
-            logging.debug(result["s:Envelope"]["s:Body"]["u:DeletePortMappingResponse"]["@xmlns:u"])
+            log.debug(result["s:Envelope"]["s:Body"]["u:DeletePortMappingResponse"]["@xmlns:u"])
         except Exception as e:
-            logging.error(e)
+            log.error(e)

@@ -26,7 +26,6 @@ class V:
     P2P_UDP_ACCEPT = None
 
     # setting
-    F_FILE_CONTINUE_ASKING = False
     TOR_CONNECTION = None  # proxy (host, port)
 
 
