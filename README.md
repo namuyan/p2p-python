@@ -5,6 +5,7 @@ This library enables you create P2P application.
 
 ## Require
 * Python3 (>=3.5)
+* Rust **nightly**
 
 ## How to install
 ```commandline
@@ -18,9 +19,6 @@ pip3 install --user git+https://github.com/namuyan/p2p-python.git
     * [Direct cmd](doc/DIRECT_CMD.md)
     * [Broadcast cmd](doc/BROADCAST_CMD.md)
     * [another cmd](doc/ANOTHER_CMD.md)
-* tool
-    * [~~FileShare~~](doc/SHARE.md)  removed
-    * [~~Channel~~](doc/CHANNEL.md)  removed
 
 ## Tutorial
 Please read first of all.
