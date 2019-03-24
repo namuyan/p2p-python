@@ -11,8 +11,9 @@ from queue import Queue
 from io import BytesIO
 from time import time, sleep
 from logging import getLogger
+from binascii import a2b_hex
 from threading import Thread, current_thread, RLock, Event
-from nem_ed25519.base import Encryption
+from nem_ed25519 import Encrypt
 from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher
 from p2p_python.config import C, V, Debug, PeerToPeerError
@@ -41,9 +42,6 @@ class Core:
         self.user = list()
         self.lock = RLock()
         self.host = host  # local=>'localhost', 'global'=>None
-        self.ecc = Encryption()
-        self.ecc.secret_key()
-        self.ecc.public_key()
         self.core_que = Queue(maxsize=200)
         self.listen = listen
         self.buffsize = buffsize
@@ -250,17 +248,19 @@ class Core:
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を受取る
+            ecc = Encrypt.new(None)
             receive = sock.recv(self.buffsize)
             self.traffic.put_traffic_down(receive)
-            public_key = json.loads(receive.decode())['public-key']
+            other_pk = json.loads(receive.decode())['public-key']
+            ecc.other_pk = a2b_hex(other_pk)
             # 公開鍵を送る
-            send = json.dumps({'public-key': self.ecc.pk}).encode()
+            send = json.dumps({'public-key': ecc.pk}).encode()
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # AESKEYとヘッダーを取得し復号化する
             receive = sock.recv(self.buffsize)
             self.traffic.put_traffic_down(receive)
-            data = json.loads(self.ecc.decrypt(sender_pk=public_key, enc=receive).decode())
+            data = json.loads(ecc.decrypt(receive).decode())
             aeskey, header = data['aes-key'], data['header']
             log.debug("Success ase-key receive {}".format(host_port))
             # ユーザーを作成する
@@ -395,7 +395,8 @@ class Core:
             if new_user.name == V.SERVER_NAME:
                 raise ConnectionAbortedError('Same origin connection.')
             # こちらの公開鍵を送る
-            send = json.dumps({'public-key': self.ecc.pk}).encode()
+            ecc = Encrypt.new(None)
+            send = json.dumps({'public-key': ecc.pk}).encode()
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 公開鍵を取得する
@@ -403,10 +404,11 @@ class Core:
             self.traffic.put_traffic_down(receive)
             if len(receive) == 0:
                 raise ConnectionAbortedError('received msg is zero.')
-            public_key = json.loads(receive.decode())['public-key']
+            other_pk = json.loads(receive.decode())['public-key']
+            ecc.other_pk = a2b_hex(other_pk)
             # AESKEYとHeaderを暗号化して送る
-            encrypted = self.ecc.encrypt(recipient_pk=public_key, msg=json.dumps(
-                {'aes-key': new_user.aeskey, 'header': self.get_server_header()}).encode(), encode='raw')
+            send = json.dumps({'aes-key': new_user.aeskey, 'header': self.get_server_header()})
+            encrypted = ecc.encrypt(send.encode())
             sock.send(encrypted)
             self.traffic.put_traffic_up(encrypted)
             # Accept信号を受け取る

@@ -5,13 +5,11 @@ This library enables you create P2P application.
 
 ## Require
 * Python3 (>=3.5)
-* [bin-json](https://github.com/namuyan/bin-json)
 
 ## How to install
 ```commandline
-pip install p2p-python
-or
-pip install git+https://github.com/namuyan/p2p-python.git
+pip3 install --user git+https://github.com/namuyan/nem-ed25519.git@rust-ver
+pip3 install --user git+https://github.com/namuyan/p2p-python.git
 ```
 
 ## how to use
