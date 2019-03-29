@@ -1,6 +1,3 @@
-#!/user/env python3
-# -*- coding: utf-8 -*-
-
 import json
 import random
 import socket
@@ -30,6 +27,7 @@ ban_address = list()  # deny connection address
 
 
 class Core:
+
     def __init__(self, host=None, listen=15, buffsize=4096):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
         # status params
@@ -74,12 +72,12 @@ class Core:
             return False
 
     def start(self, s_family=socket.AF_UNSPEC):
+
         def tcp_server_listen(server_sock, mask):
             try:
                 sock, host_port = server_sock.accept()
                 sock.setblocking(True)
-                Thread(target=self._initial_connection_check,
-                       args=(sock, host_port), daemon=True).start()
+                Thread(target=self._initial_connection_check, args=(sock, host_port), daemon=True).start()
                 log.info("Server accept from {}".format(host_port))
             except OSError as e:
                 log.debug("OSError {}".format(e))
@@ -108,7 +106,8 @@ class Core:
                 log.debug(e, exc_info=Debug.P_EXCEPTION)
 
         def create_tcp_server_socks():
-            for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_STREAM, 0, socket.AI_PASSIVE):
+            for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_STREAM, 0,
+                                          socket.AI_PASSIVE):
                 af, sock_type, proto, canon_name, sa = res
                 try:
                     sock = socket.socket(af, sock_type, proto)
@@ -139,7 +138,8 @@ class Core:
 
         def create_udp_server_socks():
             before_num = len(listen_sel.get_map())
-            for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_DGRAM, 0, socket.AI_PASSIVE):
+            for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_DGRAM, 0,
+                                          socket.AI_PASSIVE):
                 af, sock_type, proto, canon_name, sa = res
                 try:
                     sock = socket.socket(af, sock_type, proto)
@@ -202,7 +202,8 @@ class Core:
             'p2p_udp_accept': V.P2P_UDP_ACCEPT,
             'p2p_port': V.P2P_PORT,
             'start_time': self.start_time,
-            'last_seen': int(time())}
+            'last_seen': int(time())
+        }
 
     def create_connection(self, host, port):
         sock = host_port = None
@@ -269,8 +270,8 @@ class Core:
                 new_user.deserialize(header)
                 # headerのチェック
                 if new_user.network_ver != V.NETWORK_VER:
-                    raise PeerToPeerError('Don\'t same network version [{}!={}]'
-                                          .format(new_user.network_ver, V.NETWORK_VER))
+                    raise PeerToPeerError('Don\'t same network version [{}!={}]'.format(
+                        new_user.network_ver, V.NETWORK_VER))
                 self.number += 1
             # Acceptシグナルを送る
             encrypted = AESCipher.encrypt(new_user.aeskey, b'accept')
@@ -278,8 +279,7 @@ class Core:
             self.traffic.put_traffic_up(encrypted)
 
             log.info("New connection to \"{}\" {}".format(new_user.name, new_user.get_host_port()))
-            Thread(target=self._receive_msg,
-                   name='C:' + new_user.name, args=(new_user,), daemon=True).start()
+            Thread(target=self._receive_msg, name='C:' + new_user.name, args=(new_user,), daemon=True).start()
 
             c = 20
             while new_user not in self.user and c > 0:
@@ -388,8 +388,8 @@ class Core:
             self.traffic.put_traffic_down(received)
             header = json.loads(received.decode())
             with self.lock:
-                new_user = User(self.number, sock, host_port,
-                                aeskey=AESCipher.create_key(), sock_type=C.T_SERVER)
+                new_user = User(
+                    self.number, sock, host_port, aeskey=AESCipher.create_key(), sock_type=C.T_SERVER)
                 self.number += 1
             new_user.deserialize(header)
             if new_user.name == V.SERVER_NAME:
@@ -419,8 +419,7 @@ class Core:
                 raise ConnectionAbortedError('Not accept signal.')
             # Accept connection
             log.info("New connection from \"{}\" {}".format(new_user.name, new_user.get_host_port()))
-            Thread(target=self._receive_msg,
-                   name='S:' + new_user.name, args=(new_user,), daemon=True).start()
+            Thread(target=self._receive_msg, name='S:' + new_user.name, args=(new_user,), daemon=True).start()
             # Port accept check
             sleep(10)
             if new_user in self.user:
@@ -513,7 +512,8 @@ class Core:
                         break
                     else:
                         # another message pushing
-                        msg_length, initial_bytes = int.from_bytes(initial_bytes[:4], 'big'), initial_bytes[4:]
+                        msg_length, initial_bytes = int.from_bytes(initial_bytes[:4],
+                                                                   'big'), initial_bytes[4:]
                         f_raise_timeout = True
                     bio.truncate(0)
                     bio.seek(0)
@@ -581,13 +581,11 @@ class Core:
         f_changed = False
         # reflect user status
         if f_tcp is not new_user.p2p_accept:
-            log.debug("{} Update TCP accept status [{}>{}]"
-                      .format(new_user, new_user.p2p_accept, f_tcp))
+            log.debug("{} Update TCP accept status [{}>{}]".format(new_user, new_user.p2p_accept, f_tcp))
             new_user.p2p_accept = f_tcp
             f_changed = True
         if f_udp is not new_user.p2p_udp_accept:
-            log.debug("{} Update UDP accept status [{}>{}]"
-                      .format(new_user, new_user.p2p_udp_accept, f_udp))
+            log.debug("{} Update UDP accept status [{}>{}]".format(new_user, new_user.p2p_udp_accept, f_udp))
             new_user.p2p_udp_accept = f_udp
             f_changed = True
         # if f_changed:

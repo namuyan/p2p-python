@@ -1,5 +1,3 @@
-
-
 class C:
     # 一度に受け取れる最大データ量(5MBytes)
     MAX_RECEIVE_SIZE = 5000 * 1000

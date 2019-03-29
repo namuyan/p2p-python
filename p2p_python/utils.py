@@ -23,8 +23,8 @@ def get_name():
     return "{}:{}".format(random.choice(name), random.randint(10000, 99999))
 
 
-def setup_p2p_params(network_ver, p2p_port, p2p_accept=True,
-                     p2p_udp_accept=True, sub_dir=None, f_debug=False):
+def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, p2p_udp_accept=True, sub_dir=None,
+                     f_debug=False):
     """ setup general connection setting """
     if f_debug:
         Debug.P_EXCEPTION = True
@@ -62,8 +62,8 @@ def setup_tor_connection(proxy_host='127.0.0.1', port=9150, f_raise_error=True):
     host_port = (proxy_host, port)
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     if V.P2P_ACCEPT or V.P2P_UDP_ACCEPT:
-        raise ConnectionError('P2P socket accept enable? tcp={} udp={}'
-                              .format(V.P2P_ACCEPT, V.P2P_UDP_ACCEPT))
+        raise ConnectionError('P2P socket accept enable? tcp={} udp={}'.format(
+            V.P2P_ACCEPT, V.P2P_UDP_ACCEPT))
     if 0 != sock.connect_ex(host_port):
         if f_raise_error:
             raise ConnectionError('Cannot connect proxy by test.')
@@ -94,6 +94,10 @@ def trim_msg(item, num):
 
 
 __all__ = [
-    "get_version", "get_name", "is_reachable",
-    "setup_tor_connection", "setup_p2p_params", "trim_msg",
+    "get_version",
+    "get_name",
+    "is_reachable",
+    "setup_tor_connection",
+    "setup_p2p_params",
+    "trim_msg",
 ]

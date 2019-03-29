@@ -12,6 +12,7 @@ log = getLogger('p2p-python')
 
 
 class EventIgnition:
+
     def __init__(self):
         self.event = dict()
 
@@ -38,6 +39,7 @@ class EventIgnition:
 
 
 class AESCipher:
+
     @staticmethod
     def create_key():
         return b64encode(os.urandom(AES.block_size)).decode()
@@ -81,6 +83,7 @@ class AESCipher:
 
 
 class Peers:
+
     def __init__(self, path):
         """recode all node, don't remove"""
         self._peer = dict()  # {(host, port): header,..}
@@ -115,7 +118,7 @@ class Peers:
             dump((host_port, data), fp)
 
     def cleanup(self):
-        time_limit = int(time() - 3600 * 24 * 30)
+        time_limit = int(time() - 3600*24*30)
         try:
             with open(self.path, mode='br') as fp:
                 for k, v in stream_unpacker(fp):

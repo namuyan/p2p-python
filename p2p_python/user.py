@@ -4,9 +4,9 @@ from threading import Lock
 
 
 class User:
-    __slots__ = ("name", "client_ver", "network_ver", "p2p_accept", "p2p_udp_accept",
-                 "p2p_port", "start_time", "number", "sock", "host_port",
-                 "aeskey", "sock_type", "neers", "score", "warn", "last_seen", "lock")
+    __slots__ = ("name", "client_ver", "network_ver", "p2p_accept", "p2p_udp_accept", "p2p_port",
+                 "start_time", "number", "sock", "host_port", "aeskey", "sock_type", "neers", "score", "warn",
+                 "last_seen", "lock")
 
     def __init__(self, number, sock, host_port, aeskey, sock_type):
         self.name = None
@@ -30,7 +30,8 @@ class User:
 
     def __repr__(self):
         return "<User {} {}s {} score={} warn={}>".format(
-            self.name, int(time()) - self.start_time, (self.host_port[0], self.p2p_port), self.score, self.warn)
+            self.name,
+            int(time()) - self.start_time, (self.host_port[0], self.p2p_port), self.score, self.warn)
 
     def __del__(self):
         self.close()
@@ -59,18 +60,21 @@ class User:
             'aeskey': self.aeskey,
             'sock_type': self.sock_type,
             'score': self.score,
-            'warn': self.warn}
+            'warn': self.warn
+        }
         return r
 
     def serialize(self):
-        r = {'name': self.name,
-             'client_ver': self.client_ver,
-             'network_ver': self.network_ver,
-             'p2p_accept': self.p2p_accept,
-             'p2p_udp_accept': self.p2p_udp_accept,
-             'p2p_port': self.p2p_port,
-             'start_time': self.start_time,
-             'last_seen': self.last_seen}
+        r = {
+            'name': self.name,
+            'client_ver': self.client_ver,
+            'network_ver': self.network_ver,
+            'p2p_accept': self.p2p_accept,
+            'p2p_udp_accept': self.p2p_udp_accept,
+            'p2p_port': self.p2p_port,
+            'start_time': self.start_time,
+            'last_seen': self.last_seen
+        }
         return r
 
     def deserialize(self, s):

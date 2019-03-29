@@ -11,7 +11,6 @@ from logging import getLogger
 import threading
 import time
 import random
-
 """
 UPnPによるNAT超え
 参考：http://d.hatena.ne.jp/yogit/20101006/1286380061
@@ -64,7 +63,8 @@ class UpnpClient(threading.Thread):
 
                 # Action open port
                 for p_out, p_in, protocol in self.opens - ports:
-                    self.soap_add_mapping(soap_url, (p_out, p_in, local_ip, protocol, self.OPEN_SPAN, "Hello"))
+                    self.soap_add_mapping(soap_url,
+                                          (p_out, p_in, local_ip, protocol, self.OPEN_SPAN, "Hello"))
                     ports.add((p_out, p_in, protocol))
 
                 # Wait affect mapping
@@ -81,8 +81,8 @@ class UpnpClient(threading.Thread):
                             break
                     else:
                         # Find not opened port, so action open
-                        self.soap_add_mapping(
-                            soap_url, (p_out, p_in, local_ip, protocol, self.OPEN_SPAN, "Hello"))
+                        self.soap_add_mapping(soap_url,
+                                              (p_out, p_in, local_ip, protocol, self.OPEN_SPAN, "Hello"))
 
             except Exception as e:
                 log.error(e)
@@ -119,19 +119,15 @@ class UpnpClient(threading.Thread):
     @staticmethod
     def get_localhost_ip():
         try:
-            return [
-                (s.connect((NAME_SERVER, 80)), s.getsockname()[0], s.close())
-                for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
-            ][0][1]
+            return [(s.connect((NAME_SERVER, 80)), s.getsockname()[0], s.close())
+                    for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]][0][1]
         except Exception as e:
             return '127.0.0.1'
 
     @staticmethod
     def get_global_ip():
         network_info_providers = [
-            'http://api.ipify.org/',
-            'http://myip.dnsomatic.com',
-            'http://inet-ip.info/ip',
+            'http://api.ipify.org/', 'http://myip.dnsomatic.com', 'http://inet-ip.info/ip',
             'http://v4.ident.me/'
         ]
         random.shuffle(network_info_providers)
@@ -146,10 +142,7 @@ class UpnpClient(threading.Thread):
 
     @staticmethod
     def get_global_ip_ipv6():
-        network_info_providers = [
-            'http://v6.ipv6-test.com/api/myip.php',
-            'http://v6.ident.me/'
-        ]
+        network_info_providers = ['http://v6.ipv6-test.com/api/myip.php', 'http://v6.ident.me/']
         random.shuffle(network_info_providers)
         for url in network_info_providers:
             try:
@@ -226,7 +219,8 @@ class UpnpClient(threading.Thread):
 
             req = Request(soap_url)
             req.add_header('Content-Type', 'text/xml; charset="utf-8"')
-            req.add_header('SOAPACTION', '"urn:schemas-upnp-org:service:WANPPPConnection:1#GetGenericPortMappingEntry"')
+            req.add_header('SOAPACTION',
+                           '"urn:schemas-upnp-org:service:WANPPPConnection:1#GetGenericPortMappingEntry"')
             req.data = s_o_a_p.encode('utf8')
 
             try:

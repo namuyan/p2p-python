@@ -1,0 +1,10 @@
+[style]
+based_on_style = google
+ARITHMETIC_PRECEDENCE_INDICATION = true
+NO_SPACES_AROUND_SELECTED_BINARY_OPERATORS = true
+SPLIT_ARGUMENTS_WHEN_COMMA_TERMINATED = true
+COLUMN_LIMIT = 110
+INDENT_DICTIONARY_VALUE = true
+
+# create patch `yapf -d -r -p p2p_python > yapf.patch`
+# affect patch `patch -p0 < yapf.patch`

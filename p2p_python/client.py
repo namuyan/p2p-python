@@ -38,6 +38,7 @@ class ClientCmd:
 
 
 class PeerClient:
+
     def __init__(self, listen=15, f_local=False, default_hook=only_key_check, object_hook=None):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
         # status params
@@ -91,8 +92,9 @@ class PeerClient:
                     pass
                 except Exception as e:
                     self.p2p.remove_connection(user)
-                    log.debug("Processing error, ({}, {}, {})"
-                              .format(user.name, msg_body, e), exc_info=Debug.P_EXCEPTION)
+                    log.debug(
+                        "Processing error, ({}, {}, {})".format(user.name, msg_body, e),
+                        exc_info=Debug.P_EXCEPTION)
             self.f_finish = True
             self.f_running = False
             log.info("Close processing.")
@@ -106,8 +108,7 @@ class PeerClient:
                 except queue.Empty:
                     pass
                 except Exception as e:
-                    log.debug("Processing error, ({}, {})"
-                              .format(user.name, e), exc_info=Debug.P_EXCEPTION)
+                    log.debug("Processing error, ({}, {})".format(user.name, e), exc_info=Debug.P_EXCEPTION)
             log.info("Close broadcast.")
 
         self.f_running = True
@@ -125,16 +126,15 @@ class PeerClient:
             'cmd': item['cmd'],
             'data': None,
             'time': time(),
-            'uuid': item['uuid']}
+            'uuid': item['uuid']
+        }
         allow_list = list()
         deny_list = list()
         ack_list = list()
         f_udp = False
 
         if item['cmd'] == ClientCmd.PING_PONG:
-            temperate['data'] = {
-                'ping': item['data'],
-                'pong': time()}
+            temperate['data'] = {'ping': item['data'], 'pong': time()}
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.BROADCAST:
@@ -177,6 +177,7 @@ class PeerClient:
             allow_list.append(user)
 
         elif item['cmd'] == ClientCmd.DIRECT_CMD:
+
             def direct_cmd():
                 data = item['data']
                 temperate['data'] = self.event.work(cmd=data['cmd'], data=data['data'])
@@ -197,8 +198,8 @@ class PeerClient:
             ack_count = self._send_msg(item=temperate, allows=ack_list)
         # debug
         if Debug.P_RECEIVE_MSG_INFO:
-            log.debug("Reply to request {} All={}, Send={}, Ack={}"
-                      .format(temperate['cmd'], len(self.p2p.user), send_count, ack_count))
+            log.debug("Reply to request {} All={}, Send={}, Ack={}".format(temperate['cmd'], len(
+                self.p2p.user), send_count, ack_count))
 
     def type_response(self, user, item):
         cmd = item['cmd']
@@ -246,12 +247,7 @@ class PeerClient:
         assert get_ident() != self.threadid, "The thread is used by p2p_python!"
         uuid = uuid if uuid else random.randint(10, 0xffffffff)
         # 1. Make template
-        temperate = {
-            'type': T_REQUEST,
-            'cmd': cmd,
-            'data': data,
-            'time': time(),
-            'uuid': uuid}
+        temperate = {'type': T_REQUEST, 'cmd': cmd, 'data': data, 'time': time(), 'uuid': uuid}
         f_udp = False
 
         # 2. Setup allows to send nodes
@@ -299,8 +295,8 @@ class PeerClient:
                     self.try_reconnect(user=user, reason="Timeout by waiting '{}'".format(cmd))
                 raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, user.name, data))
             else:
-                raise TimeoutError('command timeout on broadcast to {}users, {} {}'
-                                   .format(len(allows), uuid, data))
+                raise TimeoutError('command timeout on broadcast to {}users, {} {}'.format(
+                    len(allows), uuid, data))
 
     def try_reconnect(self, user, reason=None):
         self.p2p.remove_connection(user, reason)
@@ -315,22 +311,15 @@ class PeerClient:
             raise PeerToPeerError('No peers.')
         user = user if user else random.choice(self.p2p.user)
         uuid = uuid if uuid else random.randint(100, 0xffffffff)
-        send_data = {
-            'cmd': cmd,
-            'data': data,
-            'uuid': uuid}
+        send_data = {'cmd': cmd, 'data': data, 'uuid': uuid}
         dummy, item = self.send_command(ClientCmd.DIRECT_CMD, send_data, uuid, user)
         return user, item
 
     def stabilize(self):
         sleep(5)
         log.info("start stabilize.")
-        ignore_peers = {
-            (GLOBAL_IPV4, V.P2P_PORT),
-            (GLOBAL_IPV6, V.P2P_PORT),
-            (LOCAL_IP, V.P2P_PORT),
-            ('127.0.0.1', V.P2P_PORT),
-            ('::1', V.P2P_PORT)}
+        ignore_peers = {(GLOBAL_IPV4, V.P2P_PORT), (GLOBAL_IPV6, V.P2P_PORT), (LOCAL_IP, V.P2P_PORT),
+                        ('127.0.0.1', V.P2P_PORT), ('::1', V.P2P_PORT)}
         if len(self.peers) == 0:
             log.info("peer list is zero, need bootnode.")
         else:
@@ -411,7 +400,8 @@ class PeerClient:
                     # スコアの下位半分を取得
                     sorted_score = sorted(user_score.items(), key=lambda x: x[1])[:len(user_score) // 3]
                     # 既接続のもののみを取得
-                    sorted_score = [(host_port, score) for host_port, score in sorted_score
+                    sorted_score = [(host_port, score)
+                                    for host_port, score in sorted_score
                                     if host_port in [user.get_host_port() for user in self.p2p.user]]
                     if len(sorted_score) == 0:
                         sleep(10)
@@ -432,11 +422,13 @@ class PeerClient:
 
                 elif len(self.p2p.user) < self.p2p.listen * 2 // 3:  # Join
                     # スコア上位半分を取得
-                    sorted_score = sorted(user_score.items(), key=lambda x: x[1], reverse=True)[:len(user_score) // 3]
+                    sorted_score = sorted(
+                        user_score.items(), key=lambda x: x[1], reverse=True)[:len(user_score) // 3]
                     # 既接続を除く
-                    sorted_score = [(host_port, score) for host_port, score in sorted_score
-                                    if host_port not in [user.get_host_port() for user in self.p2p.user]
-                                    and sticky_nodes.get(host_port, 0) < STICKY_LIMIT]
+                    sorted_score = [(host_port, score)
+                                    for host_port, score in sorted_score
+                                    if host_port not in [user.get_host_port() for user in self.p2p.user] and
+                                    sticky_nodes.get(host_port, 0) < STICKY_LIMIT]
                     if len(sorted_score) == 0:
                         sleep(10)
                         continue
@@ -481,4 +473,5 @@ class PeerClient:
         return False  # overwrite
 
 
-class FileReceiveError(FileExistsError): pass
+class FileReceiveError(FileExistsError):
+    pass

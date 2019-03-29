@@ -44,12 +44,8 @@ class Traffic(Thread):
                 with open(recode_path, mode='a') as f:
                     if not f_first:
                         f.write("unix time,date,up (kb),down (kb)\n")
-                    f.write("{},{},{},{}\n".format(
-                        time_,
-                        time.strftime('%Hh%Mm', time.gmtime(time_)),
-                        round(up / 1000, 3),
-                        round(down / 1000, 3)
-                    ))
+                    f.write("{},{},{},{}\n".format(time_, time.strftime('%Hh%Mm', time.gmtime(time_)),
+                                                   round(up / 1000, 3), round(down / 1000, 3)))
             except Exception as e:
                 log.debug(e)
         self.f_finish = True
