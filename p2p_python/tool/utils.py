@@ -5,6 +5,7 @@ import os
 
 # For AES
 from Cryptodome.Cipher import AES
+from Cryptodome.Util.Padding import pad, unpad
 from Cryptodome import Random
 from base64 import b64encode, b64decode
 
@@ -55,7 +56,7 @@ class AESCipher:
     def encrypt(key, raw):
         assert type(raw) == bytes, "input data is bytes"
         key = b64decode(key.encode())
-        raw = AESCipher._pad(raw)
+        raw = pad(raw, AES.block_size)
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(key, AES.MODE_CBC, iv)
         return iv + cipher.encrypt(raw)
@@ -66,20 +67,11 @@ class AESCipher:
         key = b64decode(key.encode())
         iv = enc[:AES.block_size]
         cipher = AES.new(key, AES.MODE_CBC, iv)
-        raw = AESCipher._unpad(cipher.decrypt(enc[AES.block_size:]))
+        raw = cipher.decrypt(enc[AES.block_size:])
+        raw = unpad(raw, AES.block_size)
         if len(raw) == 0:
             raise ValueError("AES decryption error, not correct key.")
         return raw
-
-    @staticmethod
-    def _pad(s):
-        pad = AES.block_size - len(s) % AES.block_size
-        add = AES.block_size - len(s) % AES.block_size
-        return s + add * pad.to_bytes(1, 'big')
-
-    @staticmethod
-    def _unpad(s):
-        return s[:-ord(s[len(s) - 1:])]
 
 
 class Peers:
