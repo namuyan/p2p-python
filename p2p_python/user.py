@@ -4,18 +4,27 @@ from threading import Lock
 
 
 class User:
-    __slots__ = ("name", "client_ver", "network_ver", "p2p_accept", "p2p_udp_accept", "p2p_port",
-                 "start_time", "number", "sock", "host_port", "aeskey", "sock_type", "neers", "score", "warn",
-                 "last_seen", "lock")
+    __slots__ = (
+        "name",  # (str) Name randomly chosen by name_list.txt
+        "client_ver",  # (str) __version__ of __init__.py
+        "network_ver",  # (int) Random number assigned to each P2P net
+        "p2p_accept",  # (bool) flag of accept TCP connection
+        "p2p_udp_accept",  # (bool) flag of accept UDP packet
+        "p2p_port",  # (int) P2P port
+        "start_time",  # (int) start UNIX time
+        "number",  # (int) unique number assigned to each User object
+        "sock",  # (socket) TCP socket object
+        "host_port",  # ([str, int])  Interface used on our PC
+        "aeskey",  # (str) Common key
+        "sock_type",  # (str) We are as server or client side
+        "neers",  # ({host_port: header})  Neer clients info
+        "score",  # (int )User score
+        "warn",  # (int) User warning score
+        "last_seen",  # (int) last time we get socket data
+        "_lock",  # (Lock) socket lock object
+    )
 
     def __init__(self, number, sock, host_port, aeskey, sock_type):
-        self.name = None
-        self.client_ver = None
-        self.network_ver = None
-        self.p2p_accept = None
-        self.p2p_udp_accept = None
-        self.p2p_port = None
-        self.start_time = None
         self.number = number
         self.sock = sock
         self.host_port = host_port
@@ -26,7 +35,7 @@ class User:
         self.score = 0
         self.warn = 0
         self.last_seen = int(time())
-        self.lock = Lock()
+        self._lock = Lock()
 
     def __repr__(self):
         return "<User {} {}s {} score={} warn={}>".format(
@@ -47,7 +56,7 @@ class User:
             pass
 
     def send(self, msg):
-        with self.lock:
+        with self._lock:
             self.sock.sendall(msg)
 
     def getinfo(self):

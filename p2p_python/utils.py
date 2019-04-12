@@ -13,7 +13,7 @@ def get_version():
         for word in fp.readlines():
             if word.startswith('__version__'):
                 return word.replace('"', "'").split("'")[-2]
-    return 'dev'
+    return 'unknown'
 
 
 def get_name():
