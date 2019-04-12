@@ -9,8 +9,9 @@ This library enables you create P2P application.
 
 ## How to install
 ```commandline
-pip3 install --user git+https://github.com/namuyan/nem-ed25519.git@rust-ver
-pip3 install --user git+https://github.com/namuyan/p2p-python.git
+pip3 install --user setuptools-rust
+pip3 install --user nem-ed25519-rust
+pip3 install --user p2p-python
 ```
 
 ## how to use
@@ -22,8 +23,8 @@ pip3 install --user git+https://github.com/namuyan/p2p-python.git
 
 ## Tutorial
 Please read first of all.
-[Tutorial](doc/TUTORIAL.md)  
-[p2p-pythonの内部動作について](https://ameblo.jp/namuyan/entry-12398575560.html)
+[Example](doc/EXAMPLE.md)  
+[Document -p2p-pythonの内部動作について-](https://ameblo.jp/namuyan/entry-12398575560.html)
 
 
 ## Author

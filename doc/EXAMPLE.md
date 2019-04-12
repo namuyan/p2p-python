@@ -1,4 +1,4 @@
-Tutorial
+Example
 ========
 I make a simple example code for tutorial.  
 You can know how it works.
