@@ -465,7 +465,7 @@ class Core:
         log.info("Accept connection \"{}\"".format(user.name))
 
         try:
-            user.sock.settimeout(5.0)
+            user.sock.settimeout(10)
         except OSError:
             error = 'settimeout failed on _receive_msg'
             self.remove_connection(user, error)
