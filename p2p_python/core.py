@@ -121,7 +121,6 @@ class Core:
                     sock.setblocking(False)
                 except OSError as e:
                     try:
-                        sock.shutdown(socket.SHUT_RDWR)
                         sock.close()
                     except OSError:
                         pass
@@ -206,7 +205,7 @@ class Core:
         }
 
     def create_connection(self, host, port):
-        sock = host_port = None
+        sock = None
         try:
             for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
                 af, socktype, proto, canonname, host_port = res
@@ -231,7 +230,6 @@ class Core:
                     break
                 except OSError:
                     try:
-                        sock.shutdown(socket.SHUT_RDWR)
                         sock.close()
                     except OSError:
                         pass
@@ -240,44 +238,59 @@ class Core:
                 # create no connection
                 return False
             log.debug("Success connection create to {}".format(host_port))
-            # 平文を受取る
-            msg = sock.recv(self.buffsize)
-            if msg != b'hello':
-                raise PeerToPeerError('first plain msg not correct {}'.format(msg))
-            # ヘッダーを送る
+            # 1. receive plain message
+            try:
+                msg = sock.recv(self.buffsize)
+                if msg != b'hello':
+                    raise PeerToPeerError('first plain msg not correct? {}'.format(msg))
+            except socket.timeout:
+                raise PeerToPeerError('timeout on first plain msg receive')
+            # 2. send my header
             send = json.dumps(self.get_server_header()).encode()
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
-            # 公開鍵を受取る
-            my_sec, my_pub = generate_keypair()
-            receive = sock.recv(self.buffsize)
-            self.traffic.put_traffic_down(receive)
-            other_pk = json.loads(receive.decode())['public-key']
+            # 3. receive public key
+            try:
+                my_sec, my_pub = generate_keypair()
+                receive = sock.recv(self.buffsize)
+                self.traffic.put_traffic_down(receive)
+                msg = json.loads(receive.decode())
+            except socket.timeout:
+                raise PeerToPeerError('timeout on public key receive')
+            except json.JSONDecodeError:
+                raise PeerToPeerError('json decode error on public key receive')
+            other_pk = msg['public-key']
             other_pub = a2b_hex(other_pk)
-            # 公開鍵を送る
+            # 4. send public key
             send = json.dumps({'public-key': my_pub.hex()}).encode()
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
-            # AESKEYとヘッダーを取得し復号化する
-            receive = sock.recv(self.buffsize)
-            self.traffic.put_traffic_down(receive)
-            data = json.loads(decrypt(my_sec, other_pub, receive).decode())
+            # 5. Get AES key and header and decrypt
+            try:
+                receive = sock.recv(self.buffsize)
+                self.traffic.put_traffic_down(receive)
+                dec = decrypt(my_sec, other_pub, receive)
+                data = json.loads(dec.decode())
+            except socket.timeout:
+                raise PeerToPeerError('timeout on AES key and header receive')
+            except json.JSONDecodeError:
+                raise PeerToPeerError('json decode error on AES key and header receive')
             aeskey, header = data['aes-key'], data['header']
-            log.debug("Success ase-key receive {}".format(host_port))
-            # ユーザーを作成する
+            # 6. generate new user
             with self.lock:
                 new_user = User(self.number, sock, host_port, aeskey, C.T_CLIENT)
                 new_user.deserialize(header)
-                # headerのチェック
+                # 7. check header
                 if new_user.network_ver != V.NETWORK_VER:
                     raise PeerToPeerError('Don\'t same network version [{}!={}]'.format(
                         new_user.network_ver, V.NETWORK_VER))
                 self.number += 1
-            # Acceptシグナルを送る
+            # 8. send accept signal
             encrypted = AESCipher.encrypt(new_user.aeskey, b'accept')
             sock.sendall(encrypted)
             self.traffic.put_traffic_up(encrypted)
 
+            # 9. accept connection
             log.info("New connection to \"{}\" {}".format(new_user.name, new_user.get_host_port()))
             Thread(target=self._receive_msg, name='C:' + new_user.name, args=(new_user,), daemon=True).start()
 
@@ -290,28 +303,22 @@ class Core:
                 return False
             else:
                 return True
-        except json.JSONDecodeError:
-            error = "Json decode error."
         except PeerToPeerError as e:
-            error = "NewConnectionError {} {}".format(host_port, e)
+            msg = "peer2peer error, {} ({})".format(e, host)
         except ConnectionRefusedError as e:
-            error = "ConnectionRefusedError {} {}".format(host_port, e)
+            msg = "connection refused error, {} ({})".format(e, host)
         except ValueError as e:
-            error = "ValueError: {} {}".format(host_port, e)
+            msg = "ValueError: {} {}".format(host, e)
         except Exception as e:
-            log.debug("NewConnectionError", exc_info=True)
-            error = "NewConnectionError {} {}".format(host_port, e)
+            log.error("NewConnectionError", exc_info=True)
+            msg = "NewConnectionError {} {}".format(host, e)
 
         # close socket
-        log.error(error)
+        log.debug(msg)
         try:
-            sock.sendall(error.encode())
-        except Exception as e:
-            pass
-        try:
-            sock.shutdown(socket.SHUT_RDWR)
+            sock.sendall(msg.encode())
             sock.close()
-        except OSError:
+        except Exception as e:
             pass
         return False
 
@@ -379,45 +386,61 @@ class Core:
         current_thread().setName('InitCheck')
         sock.settimeout(10)
         try:
-            # 平文を送る
+            # 1. send plain message
             sock.sendall(b'hello')
-            # ヘッダーを受取る
-            received = sock.recv(self.buffsize)
-            if len(received) == 0:
-                raise ConnectionAbortedError('zero msg, connection closed.')
-            self.traffic.put_traffic_down(received)
-            header = json.loads(received.decode())
+            # 2. receive other's header
+            try:
+                received = sock.recv(self.buffsize)
+                if len(received) == 0:
+                    raise PeerToPeerError('empty msg receive')
+                header = json.loads(received.decode())
+            except socket.timeout:
+                raise PeerToPeerError('timeout on other\'s header receive')
+            except json.JSONDecodeError:
+                raise PeerToPeerError('json decode error on other\'s header receive')
+            # 3. generate new user
             with self.lock:
-                new_user = User(
-                    self.number, sock, host_port, aeskey=AESCipher.create_key(), sock_type=C.T_SERVER)
+                new_user = User(self.number, sock, host_port, AESCipher.create_key(), C.T_SERVER)
                 self.number += 1
-            new_user.deserialize(header)
-            if new_user.name == V.SERVER_NAME:
-                raise ConnectionAbortedError('Same origin connection.')
-            # こちらの公開鍵を送る
+                new_user.deserialize(header)
+                if new_user.name == V.SERVER_NAME:
+                    raise ConnectionAbortedError('Same origin connection.')
+            # 4. send my public key
             my_sec, my_pub = generate_keypair()
             send = json.dumps({'public-key': my_pub.hex()}).encode()
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
-            # 公開鍵を取得する
-            receive = sock.recv(self.buffsize)
-            self.traffic.put_traffic_down(receive)
-            if len(receive) == 0:
-                raise ConnectionAbortedError('received msg is zero.')
-            other_pk = json.loads(receive.decode())['public-key']
-            other_pub = a2b_hex(other_pk)
-            # AESKEYとHeaderを暗号化して送る
-            send = json.dumps({'aes-key': new_user.aeskey, 'header': self.get_server_header()})
+            # 5. receive public key
+            try:
+                receive = sock.recv(self.buffsize)
+                self.traffic.put_traffic_down(receive)
+                if len(receive) == 0:
+                    raise ConnectionAbortedError('received msg is zero.')
+                data = json.loads(receive.decode())
+            except socket.timeout:
+                raise PeerToPeerError('timeout on public key receive')
+            except json.JSONDecodeError:
+                raise PeerToPeerError('json decode error on public key receive')
+            other_pub = a2b_hex(data['public-key'])
+            # 6. encrypt and send AES key and header
+            send = json.dumps({
+                'aes-key': new_user.aeskey,
+                'header': self.get_server_header(),
+            })
             encrypted = encrypt(my_sec, other_pub, send.encode())
             sock.send(encrypted)
             self.traffic.put_traffic_up(encrypted)
-            # Accept信号を受け取る
-            encrypted = sock.recv(self.buffsize)
-            self.traffic.put_traffic_down(encrypted)
+            # 7. receive accept signal
+            try:
+                encrypted = sock.recv(self.buffsize)
+                self.traffic.put_traffic_down(encrypted)
+            except socket.timeout:
+                raise PeerToPeerError('timeout on accept signal receive')
             receive = AESCipher.decrypt(new_user.aeskey, encrypted)
             if receive != b'accept':
-                raise ConnectionAbortedError('Not accept signal.')
-            # Accept connection
+                raise ConnectionAbortedError('Not accept signal!')
+
+            # 8. accept connection
             log.info("New connection from \"{}\" {}".format(new_user.name, new_user.get_host_port()))
             Thread(target=self._receive_msg, name='S:' + new_user.name, args=(new_user,), daemon=True).start()
             # Port accept check
@@ -426,23 +449,20 @@ class Core:
                 self.is_reachable(new_user)
             return
         except ConnectionAbortedError as e:
-            error = "ConnectionAbortedError, {}".format(e)
-        except json.decoder.JSONDecodeError as e:
-            error = "JSONDecodeError, {}".format(e)
-        except socket.timeout:
-            error = "socket.timeout"
+            msg = "connection aborted error, {} ({})".format(e, host_port[0])
+        except PeerToPeerError as e:
+            msg = "peer2peer error, {} ({})".format(e, host_port[0])
         except Exception as e:
-            log.debug("InitialConnCheck", exc_info=True)
-            error = "InitialConnCheck: {}".format(e)
+            log.error("InitialConnCheck", exc_info=True)
+            msg = "InitialConnCheck: {}".format(e)
+
         # close socket
-        error = "Close on initial check " + error
-        log.error(error)
+        log.debug(msg)
         try:
-            sock.sendall(error.encode())
+            sock.sendall(msg.encode())
         except Exception:
             pass
         try:
-            sock.shutdown(socket.SHUT_RDWR)
             sock.close()
         except OSError:
             pass
@@ -573,7 +593,6 @@ class Core:
         except OSError:
             f_tcp = False
         try:
-            sock.shutdown(socket.SHUT_RDWR)
             sock.close()
         except OSError:
             pass

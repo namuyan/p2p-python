@@ -1,5 +1,4 @@
 from time import time
-import socket
 from threading import Lock
 
 
@@ -46,10 +45,6 @@ class User:
         self.close()
 
     def close(self):
-        try:
-            self.sock.shutdown(socket.SHUT_RDWR)
-        except Exception as e:
-            pass
         try:
             self.sock.close()
         except Exception as e:
