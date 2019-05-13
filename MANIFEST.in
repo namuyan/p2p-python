@@ -1,3 +1,2 @@
-include p2p_python/name_list.txt
 include requirements.txt
 exclude test/*

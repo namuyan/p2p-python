@@ -5,7 +5,24 @@ from tempfile import gettempdir
 from p2p_python.config import V, Debug
 
 
+NAMES = (
+    "Angle", "Ant", "Apple", "Arch", "Arm", "Army", "Baby", "Bag", "Ball", "Band", "Basin", "Bath", "Bed",
+    "Bee", "Bell", "Berry", "Bird", "Blade", "Board", "Boat", "Bone", "Book", "Boot", "Box", "Boy", "Brain",
+    "Brake", "Brick", "Brush", "Bulb", "Cake", "Card", "Cart", "Cat", "Chain", "Chest", "Chin", "Clock",
+    "Cloud", "Coat", "Comb", "Cord", "Cow", "Cup", "Dog", "Door", "Drain", "Dress", "Drop", "Ear", "Egg",
+    "Eye", "Face", "Farm", "Fish", "Flag", "Floor", "Fly", "Foot", "Fork", "Fowl", "Frame", "Girl", "Glove",
+    "Goat", "Gun", "Hair", "Hand", "Hat", "Head", "Heart", "Hook", "Horn", "Horse", "House", "Jewel", "Key",
+    "Knee", "Knife", "Knot", "Leaf", "Leg", "Line", "Lip", "Lock", "Map", "Match", "Moon", "Mouth", "Nail",
+    "Neck", "Nerve", "Net", "Nose", "Nut", "Oven", "Pen", "Pig", "Pin", "Pipe", "Plane", "Plate", "Pot",
+    "Pump", "Rail", "Rat", "Ring", "Rod", "Roof", "Root", "Sail", "Screw", "Seed", "Sheep", "Shelf", "Ship",
+    "Shirt", "Shoe", "Skin", "Skirt", "Snake", "Sock", "Spade", "Spoon", "Stamp", "Star", "Stem", "Stick",
+    "Store", "Sun", "Table", "Tail", "Thumb", "Toe", "Tooth", "Town", "Train", "Tray", "Tree", "Wall",
+    "Watch", "Wheel", "Whip", "Wing", "Wire", "Worm"
+)
+
+
 def get_version():
+    """get program version string"""
     if Debug.P_EXCEPTION:
         return 'debug'
     hear = os.path.dirname(os.path.abspath(__file__))
@@ -17,10 +34,8 @@ def get_version():
 
 
 def get_name():
-    hear = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(hear, 'name_list.txt')) as fp:
-        name = fp.read().split()
-    return "{}:{}".format(random.choice(name), random.randint(10000, 99999))
+    """get random name for identify from others"""
+    return "{}:{}".format(random.choice(NAMES), random.randint(10000, 99999))
 
 
 def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, p2p_udp_accept=True, sub_dir=None,
@@ -73,6 +88,7 @@ def setup_tor_connection(proxy_host='127.0.0.1', port=9150, f_raise_error=True):
 
 
 def is_reachable(host, port):
+    """check a port is opened"""
     for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
         af, socktype, proto, canonname, host_port = res
         try:
@@ -89,11 +105,13 @@ def is_reachable(host, port):
 
 
 def trim_msg(item, num):
+    """limit a message"""
     str_item = str(item)
     return str_item[:num] + ('...' if len(str_item) > num else '')
 
 
 __all__ = [
+    "NAMES",
     "get_version",
     "get_name",
     "is_reachable",
