@@ -1,20 +1,22 @@
-import os.path
-import random
-import queue
-from collections import deque
-import socket
-from time import time, sleep
-from threading import Thread, get_ident
-from expiringdict import ExpiringDict
+from p2p_python.tool.utils import *
+from p2p_python.tool.upnpc import UpnpClient
 from p2p_python.config import V, Debug, PeerToPeerError
 from p2p_python.core import Core, ban_address
 from p2p_python.utils import is_reachable
-from p2p_python.tool.utils import *
-from p2p_python.tool.upnpc import UpnpClient
+from p2p_python.user import User
 from p2p_python.serializer import *
+from threading import Thread, get_ident
+from expiringdict import ExpiringDict
+from time import time, sleep
 from logging import getLogger
+from collections import deque
+import os.path
+import random
+import queue
+import socket
 
-log = getLogger('p2p-python')
+
+log = getLogger(__name__)
 
 LOCAL_IP = UpnpClient.get_localhost_ip()
 GLOBAL_IPV4 = UpnpClient.get_global_ip()
@@ -37,7 +39,7 @@ class ClientCmd:
     DIRECT_CMD = 'cmd/client/direct-cmd'  # 隣接ノードに直接CMDを打つ
 
 
-class PeerClient:
+class PeerClient(object):
 
     def __init__(self, listen=15, f_local=False, default_hook=only_key_check, object_hook=None):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
@@ -87,17 +89,15 @@ class PeerClient:
                     elif item['type'] == T_ACK:
                         self.type_ack(user=user, item=item)
                     else:
-                        log.debug("Unknown type {}".format(item['type']))
+                        log.debug(f"unknown type={item['type']}")
                 except queue.Empty:
                     pass
                 except Exception as e:
                     self.p2p.remove_connection(user)
-                    log.debug(
-                        "Processing error, ({}, {}, {})".format(user.name, msg_body, e),
-                        exc_info=Debug.P_EXCEPTION)
+                    log.debug(f"Processing error {user.name}", exc_info=Debug.P_EXCEPTION)
             self.f_finish = True
             self.f_running = False
-            log.info("Close processing.")
+            log.info("close processing")
 
         def broadcast():
             while not self.f_stop:
@@ -108,8 +108,8 @@ class PeerClient:
                 except queue.Empty:
                     pass
                 except Exception as e:
-                    log.debug("Processing error, ({}, {})".format(user.name, e), exc_info=Debug.P_EXCEPTION)
-            log.info("Close broadcast.")
+                    log.debug(f"Processing error {user.name}", exc_info=Debug.P_EXCEPTION)
+            log.info("close broadcast")
 
         self.f_running = True
         self.p2p.start(s_family)
@@ -118,9 +118,9 @@ class PeerClient:
         # Processing
         Thread(target=processing, name='Process', daemon=True).start()
         Thread(target=broadcast, name="Broadcast", daemon=True).start()
-        log.info("start user, name is {}, port is {}".format(V.SERVER_NAME, V.P2P_PORT))
+        log.info(f"start user, name={V.SERVER_NAME} port={V.P2P_PORT}")
 
-    def type_request(self, user, item):
+    def type_request(self, user: User, item: dict):
         temperate = {
             'type': T_RESPONSE,
             'cmd': item['cmd'],
@@ -198,10 +198,9 @@ class PeerClient:
             ack_count = self._send_msg(item=temperate, allows=ack_list)
         # debug
         if Debug.P_RECEIVE_MSG_INFO:
-            log.debug("Reply to request {} All={}, Send={}, Ack={}".format(temperate['cmd'], len(
-                self.p2p.user), send_count, ack_count))
+            log.debug(f"reply to request {temperate['cmd']} {len(self.p2p.user)} {send_count} {ack_count}")
 
-    def type_response(self, user, item):
+    def type_response(self, user: User, item: dict):
         cmd = item['cmd']
         data = item['data']
         uuid = item['uuid']
@@ -212,7 +211,7 @@ class PeerClient:
             # log.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
             # log.debug("2:Data is '{}'".format(trim_msg(str(data), 80)))
 
-    def type_ack(self, user, item):
+    def type_ack(self, user: User, item: dict):
         cmd = item['cmd']
         data = item['data']
         uuid = item['uuid']
@@ -240,7 +239,7 @@ class PeerClient:
                     user.warn += 1
                     if 5 < user.warn:
                         self.try_reconnect(user=user, reason="failed to send msg.")
-                    log.debug("Failed send msg to {} '{}'".format(user.name, e))
+                    log.debug(f"failed send msg to {user.name} {str(e)}")
         return c  # how many send
 
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
@@ -302,9 +301,9 @@ class PeerClient:
         self.p2p.remove_connection(user, reason)
         host_port = user.get_host_port()
         if self.p2p.create_connection(host=host_port[0], port=host_port[1]):
-            log.debug("Reconnect to {}:{} is success".format(user.name, host_port))
+            log.debug(f"reconnect success {user.name}:{host_port}")
         else:
-            log.warning("Reconnect to {}:{} is failed".format(user.name, host_port))
+            log.warning(f"reconnect failed {user.name}:{host_port}")
 
     def send_direct_cmd(self, cmd, data, user=None, uuid=None):
         if len(self.p2p.user) == 0:
@@ -317,14 +316,19 @@ class PeerClient:
 
     def stabilize(self):
         sleep(5)
-        log.info("start stabilize.")
-        ignore_peers = {(GLOBAL_IPV4, V.P2P_PORT), (GLOBAL_IPV6, V.P2P_PORT), (LOCAL_IP, V.P2P_PORT),
-                        ('127.0.0.1', V.P2P_PORT), ('::1', V.P2P_PORT)}
+        log.info("start stabilize")
+        ignore_peers = {
+            (GLOBAL_IPV4, V.P2P_PORT),
+            (GLOBAL_IPV6, V.P2P_PORT),
+            (LOCAL_IP, V.P2P_PORT),
+            ('127.0.0.1', V.P2P_PORT),
+            ('::1', V.P2P_PORT),
+        }
         if len(self.peers) == 0:
-            log.info("peer list is zero, need bootnode.")
+            log.info("peer list is zero, need bootnode")
         else:
             need = max(1, self.p2p.listen // 2)
-            log.info("Connect first nodes, min %d users." % need)
+            log.info(f"connect first nodes, min {need} users")
             peer_host_port = list(self.peers.keys())
             random.shuffle(peer_host_port)
             for host_port in peer_host_port:
@@ -354,7 +358,7 @@ class PeerClient:
             else:
                 sleep(1.5 * (1 + random.random()) * len(self.p2p.user))
             if count % 24 == 1 and len(sticky_nodes) > 0:
-                log.debug("Clean sticky_nodes. [{}=>0]".format(len(sticky_nodes)))
+                log.debug(f"clean sticky_nodes [{len(sticky_nodes)}=>0]")
                 sticky_nodes.clear()
             try:
                 if len(self.p2p.user) == 0 and len(self.peers) > 0:
@@ -406,7 +410,7 @@ class PeerClient:
                     if len(sorted_score) == 0:
                         sleep(10)
                         continue
-                    log.debug("Remove Score {}".format(sorted_score))
+                    log.debug(f"remove score {sorted_score}")
                     host_port, score = random.choice(sorted_score)
                     user = self.p2p.host_port2user(host_port)
                     if user is None:
@@ -414,9 +418,9 @@ class PeerClient:
                     elif len(user.neers) < need_connection:
                         pass  # 接続数が少なすぎるノード
                     elif self.p2p.remove_connection(user):
-                        log.debug("Remove connection {} {}".format(host_port, score))
+                        log.debug(f"remove connection {score} {host_port}")
                     else:
-                        log.debug("Failed remove connection. Already disconnected?")
+                        log.debug("failed remove connection. Already disconnected?")
                         if self.peers.remove(host_port):
                             del user_score[host_port]
 
@@ -432,7 +436,7 @@ class PeerClient:
                     if len(sorted_score) == 0:
                         sleep(10)
                         continue
-                    log.debug("Join Score {}".format(sorted_score))
+                    log.debug(f"join score {sorted_score}")
                     host_port, score = random.choice(sorted_score)
                     if self.p2p.host_port2user(host_port):
                         continue  # 既に接続済み
@@ -444,9 +448,9 @@ class PeerClient:
                     elif host_port[0] in ban_address:
                         continue  # BAN address
                     elif self.p2p.create_connection(host=host_port[0], port=host_port[1]):
-                        log.debug("New connection {}".format(host_port))
+                        log.debug(f"new connection {host_port}")
                     else:
-                        log.info("Failed connect, remove {}".format(host_port))
+                        log.info(f"failed connect, remove {host_port}")
                         sticky_nodes[host_port] = sticky_nodes.get(host_port, 0) + 1
                         if self.peers.remove(host_port):
                             del user_score[host_port]
@@ -459,19 +463,27 @@ class PeerClient:
                         self.try_reconnect(user=user, reason='regular ping check failed')
 
             except TimeoutError as e:
-                log.info("Stabilize {}".format(e))
+                log.info(f"stabilize {str(e)}")
             except ConnectionError as e:
-                log.debug("ConnectionError {}".format(e))
+                log.debug(f"ConnectionError {str(e)}")
             except PeerToPeerError as e:
-                log.debug("Peer2PeerError: {}".format(e))
+                log.debug(f"Peer2PeerError: {str(e)}")
             except Exception as e:
-                log.debug("Stabilize {}".format(e), exc_info=True)
-        log.error("Get out from loop of stabilize.")
+                log.debug(f"Stabilize {str(e)}", exc_info=True)
+        log.error("go out from loop of stabilize")
 
     @staticmethod
     def broadcast_check(data):
         return False  # overwrite
 
 
-class FileReceiveError(FileExistsError):
-    pass
+__all__ = [
+    "LOCAL_IP",
+    "GLOBAL_IPV4",
+    "GLOBAL_IPV6",
+    "T_REQUEST",
+    "T_RESPONSE",
+    "T_ACK",
+    "ClientCmd",
+    "PeerClient",
+]

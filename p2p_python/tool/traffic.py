@@ -4,7 +4,7 @@ import time
 import os.path
 from logging import getLogger
 
-log = getLogger('p2p-python')
+log = getLogger(__name__)
 
 
 class Traffic(Thread):
@@ -21,7 +21,7 @@ class Traffic(Thread):
 
     def close(self):
         self.f_stop = True
-        log.debug("traffic close.")
+        log.debug("traffic close")
 
     def run(self):
         count = 0
@@ -55,3 +55,8 @@ class Traffic(Thread):
 
     def put_traffic_down(self, b):
         self.traffic_down.append(len(b))
+
+
+__all__ = [
+    "Traffic",
+]

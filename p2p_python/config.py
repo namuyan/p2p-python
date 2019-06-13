@@ -1,3 +1,5 @@
+
+
 class C:
     # 一度に受け取れる最大データ量(50MBytes)
     MAX_RECEIVE_SIZE = 50 * 1000 * 1000
@@ -37,3 +39,11 @@ class Debug:
 
 class PeerToPeerError(Exception):
     pass
+
+
+__all__ = [
+    "C",
+    "V",
+    "Debug",
+    "PeerToPeerError",
+]

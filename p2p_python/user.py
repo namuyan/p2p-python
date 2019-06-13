@@ -1,8 +1,8 @@
-from time import time
 from threading import Lock
+from time import time
 
 
-class User:
+class User(object):
     __slots__ = (
         "name",  # (str) Name randomly chosen by name_list.txt
         "client_ver",  # (str) __version__ of __init__.py
@@ -69,7 +69,7 @@ class User:
         return r
 
     def serialize(self):
-        r = {
+        return {
             'name': self.name,
             'client_ver': self.client_ver,
             'network_ver': self.network_ver,
@@ -79,7 +79,6 @@ class User:
             'start_time': self.start_time,
             'last_seen': self.last_seen
         }
-        return r
 
     def deserialize(self, s):
         self.name = s['name']
@@ -91,7 +90,7 @@ class User:
         self.start_time = s['start_time']
         self.last_seen = s.get('last_seen', self.last_seen)
 
-    def get_host_port(self):
+    def get_host_port(self) -> (str, int):
         # connection先
         host_port = list(self.host_port)
         host_port[1] = self.p2p_port
@@ -101,3 +100,8 @@ class User:
         # [[(host,port), header],..]
         for host_port, header in items:
             self.neers[tuple(host_port)] = header
+
+
+__all__ = [
+    "User",
+]

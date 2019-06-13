@@ -1,6 +1,6 @@
 from p2p_python.serializer import stream_unpacker, dump
-from time import time
 from logging import getLogger
+from time import time
 import os
 
 # For AES
@@ -9,7 +9,7 @@ from Cryptodome.Util.Padding import pad, unpad
 from Cryptodome import Random
 from base64 import b64encode, b64decode
 
-log = getLogger('p2p-python')
+log = getLogger(__name__)
 
 
 class EventIgnition:

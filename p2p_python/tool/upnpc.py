@@ -1,24 +1,16 @@
-#!/user/env python3
-# -*- coding: utf-8 -*-
-
-import socket
-import xml.etree.ElementTree as ET
-from urllib.parse import urlparse
-import requests
 from urllib.request import Request, urlopen
-import xmltodict
+from urllib.parse import urlparse
+from xml.etree import ElementTree
 from logging import getLogger
+import xmltodict
 import threading
+import requests
+import socket
 import time
 import random
-"""
-UPnPによるNAT超え
-参考：http://d.hatena.ne.jp/yogit/20101006/1286380061
-巷のライブラリ動かないぞ
-rebased
-"""
 
-log = getLogger('p2p-python')
+
+log = getLogger(__name__)
 NAME_SERVER = '8.8.8.8'
 
 
@@ -44,7 +36,7 @@ class UpnpClient(threading.Thread):
             external_ip = self.soap_get_ip(soap_url)
             local_ip = self.get_localhost_ip()
         except Exception as e:
-            log.info("UPnPC don't work!" % e)
+            log.info(f"UPnPC don't work! by {str(e)}")
             self.finish = True
             return
         if external_ip == local_ip:
@@ -95,16 +87,16 @@ class UpnpClient(threading.Thread):
             log.info("Close UPnPC")
             self.finish = True
 
-    def add_open_port(self, out_in_protocol):
+    def add_open_port(self, out_in_protocol: ()):
         assert len(out_in_protocol) == 3, "Need three args"
-        log.info("Open port %d=>%d %s" % out_in_protocol)
+        log.info(f"open port {out_in_protocol}")
         if out_in_protocol not in self.opens:
             self.opens.add(out_in_protocol)
             self.f_wait = False
 
     def remove_open_port(self, out_in_protocol):
         assert len(out_in_protocol) == 3, "Need three args"
-        log.info("Close port %d=>%d %s" % out_in_protocol)
+        log.info(f"close port {out_in_protocol}")
         if out_in_protocol in self.opens:
             self.opens.remove(out_in_protocol)
             self.f_wait = False
@@ -176,7 +168,7 @@ class UpnpClient(threading.Thread):
     @staticmethod
     def get_soap_url(request_url):
         xml_string = requests.get(url=request_url).text
-        xml = ET.fromstring(xml_string)
+        xml = ElementTree.fromstring(xml_string)
         ns = {'ns': 'urn:schemas-upnp-org:device-1-0'}
         for child in xml.findall(".//ns:service", ns):
             if child.find('ns:serviceType', ns).text == 'urn:schemas-upnp-org:service:WANIPConnection:1':
@@ -304,3 +296,9 @@ class UpnpClient(threading.Thread):
             log.debug(result["s:Envelope"]["s:Body"]["u:DeletePortMappingResponse"]["@xmlns:u"])
         except Exception as e:
             log.error(e)
+
+
+__all__ = [
+    "NAME_SERVER",
+    "UpnpClient",
+]

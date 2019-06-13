@@ -35,10 +35,10 @@ setup(
     packages=find_packages(),
     install_requires=install_requires,
     include_package_data=True,
+    python_requires=">=3.6",
     license="MIT Licence",
     classifiers=[
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'License :: OSI Approved :: MIT License',
     ],

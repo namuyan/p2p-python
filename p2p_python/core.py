@@ -1,32 +1,34 @@
+from p2p_python.config import C, V, Debug, PeerToPeerError
+from p2p_python.user import User
+from p2p_python.serializer import dumps
+from p2p_python.tool.traffic import Traffic
+from p2p_python.tool.utils import AESCipher
+from nem_ed25519_rust import generate_keypair, encrypt, decrypt
+from threading import Thread, current_thread, RLock, Event
+from typing import Optional, List
+from logging import getLogger
+from binascii import a2b_hex
+from time import time, sleep
+from queue import Queue
+from io import BytesIO
+import selectors
 import json
 import random
 import socket
 import socks
 import zlib
-import selectors
-from queue import Queue
-from io import BytesIO
-from time import time, sleep
-from logging import getLogger
-from binascii import a2b_hex
-from threading import Thread, current_thread, RLock, Event
-from nem_ed25519_rust import generate_keypair, encrypt, decrypt
-from p2p_python.tool.traffic import Traffic
-from p2p_python.tool.utils import AESCipher
-from p2p_python.config import C, V, Debug, PeerToPeerError
-from p2p_python.user import User
-from p2p_python.serializer import dumps
+
 
 # constant
 SERVER_SIDE = 'Server'
 CLIENT_SIDE = 'Client'
 
-log = getLogger('p2p-python')
+log = getLogger(__name__)
 listen_sel = selectors.DefaultSelector()
 ban_address = list()  # deny connection address
 
 
-class Core:
+class Core(object):
 
     def __init__(self, host=None, listen=15, buffsize=4096):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
@@ -37,7 +39,7 @@ class Core:
         # working info
         self.start_time = int(time())
         self.number = 0
-        self.user = list()
+        self.user: List[User] = list()
         self.lock = RLock()
         self.host = host  # local=>'localhost', 'global'=>None
         self.core_que = Queue(maxsize=200)
@@ -67,7 +69,7 @@ class Core:
             self._ping.set()
             return r
         except Exception as e:
-            log.debug("Failed ping by {} udp={}".format(e, f_udp))
+            log.debug(f"failed ping by {e} udp={f_udp}")
             self._ping.set()
             return False
 
@@ -78,9 +80,9 @@ class Core:
                 sock, host_port = server_sock.accept()
                 sock.setblocking(True)
                 Thread(target=self._initial_connection_check, args=(sock, host_port), daemon=True).start()
-                log.info("Server accept from {}".format(host_port))
+                log.info(f"server accept from {host_port}")
             except OSError as e:
-                log.debug("OSError {}".format(e))
+                log.debug(f"OSError {str(e)}")
             except Exception as e:
                 log.debug(e, exc_info=Debug.P_EXCEPTION)
 
@@ -95,13 +97,13 @@ class Core:
                 self.traffic.put_traffic_down(msg_body)
                 msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                 if msg_body == b'Ping':
-                    log.info("Get udp accept from {}".format(user))
+                    log.info(f"get udp accept from {user}")
                     self.send_msg_body(msg_body=b'Pong', user=user)
                 else:
-                    log.debug("Get udp packet from {}".format(user))
+                    log.debug(f"get udp packet from {user}")
                     self.core_que.put((user, msg_body))
             except OSError as e:
-                log.debug("OSError {}".format(e))
+                log.debug(f"OSError {str(e)}")
             except Exception as e:
                 log.debug(e, exc_info=Debug.P_EXCEPTION)
 
@@ -113,7 +115,7 @@ class Core:
                     sock = socket.socket(af, sock_type, proto)
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 except OSError as e:
-                    log.debug("Failed tcp socket.socket {}".format(sa))
+                    log.debug(f"failed tcp socket {sa}")
                     continue
                 try:
                     sock.bind(sa)
@@ -124,15 +126,16 @@ class Core:
                         sock.close()
                     except OSError:
                         pass
-                    log.debug("Failed tcp bind or listen {}".format(sa))
+                    log.debug(f"failed tcp bind or listen {sa}")
                     continue
                 if af == socket.AF_INET or af == socket.AF_INET6:
                     listen_sel.register(sock, selectors.EVENT_READ, tcp_server_listen)
-                    log.info("New tcp server {} {}".format("IPV4" if sock.family == 2 else "IPV6", sa))
+                    sock_type = "IPV4" if sock.family == 2 else "IPV6"
+                    log.info(f"new tcp server {sock_type} {sa}")
                 else:
-                    log.warning("Not found socket type {}".format(af))
+                    log.warning(f"not found socket type {af}")
             if len(listen_sel.get_map()) == 0:
-                log.error('could not open tcp sockets')
+                log.error("could not open tcp sockets")
                 V.P2P_ACCEPT = False
 
         def create_udp_server_socks():
@@ -143,22 +146,23 @@ class Core:
                 try:
                     sock = socket.socket(af, sock_type, proto)
                 except OSError as e:
-                    log.debug("Failed udp socket.socket {}".format(sa))
+                    log.debug(f"failed udp socket {sa}")
                     continue
                 try:
                     sock.bind(sa)
                     sock.setblocking(False)
                 except OSError as e:
                     sock.close()
-                    log.debug("Failed udp bind {}".format(sa))
+                    log.debug(f"failed udp bind {sa}")
                     continue
                 if af == socket.AF_INET or af == socket.AF_INET6:
                     listen_sel.register(sock, selectors.EVENT_READ, udp_server_listen)
-                    log.info("New udp server {} {}".format("IPV4" if sock.family == 2 else "IPV6", sa))
+                    sock_type = "IPV4" if sock.family == 2 else "IPV6"
+                    log.info(f"new udp server {sock_type} {sa}")
                 else:
-                    log.warning("Not found socket type {}".format(af))
+                    log.warning(f"not found socket type {af}")
             if len(listen_sel.get_map()) == before_num:
-                log.error('could not open udp sockets')
+                log.error("could not open udp sockets")
                 V.P2P_UDP_ACCEPT = False
 
         def sock_listen_loop():
@@ -166,7 +170,7 @@ class Core:
                 try:
                     listen_map = listen_sel.get_map()
                     if listen_map is None:
-                        log.debug("Closed.")
+                        log.debug("close sock listen loop")
                         return
                     while len(listen_map) == 0:
                         sleep(0.5)
@@ -189,7 +193,7 @@ class Core:
         if V.P2P_ACCEPT or V.P2P_UDP_ACCEPT:
             Thread(target=sock_listen_loop, name='Listen', daemon=True).start()
         else:
-            log.info('You set p2p accept flag False.')
+            log.info("set p2p accept flag = False")
         self.f_running = True
 
     def get_server_header(self):
@@ -237,7 +241,7 @@ class Core:
             else:
                 # create no connection
                 return False
-            log.debug("Success connection create to {}".format(host_port))
+            log.debug(f"success create connection to {host_port}")
             # 1. receive plain message
             try:
                 msg = sock.recv(self.buffsize)
@@ -291,7 +295,7 @@ class Core:
             self.traffic.put_traffic_up(encrypted)
 
             # 9. accept connection
-            log.info("New connection to \"{}\" {}".format(new_user.name, new_user.get_host_port()))
+            log.info(f"New connection to {new_user.name} {new_user.get_host_port()}")
             Thread(target=self._receive_msg, name='C:' + new_user.name, args=(new_user,), daemon=True).start()
 
             c = 20
@@ -334,10 +338,10 @@ class Core:
         with self.lock:
             if user in self.user:
                 self.user.remove(user)
-                log.debug("remove connection to {} by '{}'".format(user.name, reason))
+                log.debug(f"remove connection to {user.name} by {reason}")
                 return True
             else:
-                log.debug("failed remove connection by '{}', not found {}".format(reason, user.name))
+                log.debug(f"failed remove connection by {reason}, not found {user.name}")
                 return False
 
     def send_msg_body(self, msg_body, user=None, status=200, f_udp=False, f_pro_force=False):
@@ -441,7 +445,7 @@ class Core:
                 raise ConnectionAbortedError('Not accept signal!')
 
             # 8. accept connection
-            log.info("New connection from \"{}\" {}".format(new_user.name, new_user.get_host_port()))
+            log.info(f"New connection from {new_user.name} {new_user.get_host_port()}")
             Thread(target=self._receive_msg, name='S:' + new_user.name, args=(new_user,), daemon=True).start()
             # Port accept check
             sleep(10)
@@ -482,7 +486,7 @@ class Core:
                     self.remove_connection(check_user, error)
                     log.info(error)
             self.user.append(user)
-        log.info("Accept connection \"{}\"".format(user.name))
+        log.info(f"accept connection {user.name}")
 
         try:
             user.sock.settimeout(10)
@@ -548,10 +552,10 @@ class Core:
                 msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                 msg_body = zlib.decompress(msg_body)
                 if msg_body == b'Ping':
-                    log.debug("receive ping from {}".format(user.name))
+                    log.debug(f"receive Ping from {user.name}")
                     self.send_msg_body(b'Pong', user)
                 elif msg_body == b'Pong':
-                    log.debug("receive Pong from {}".format(user.name))
+                    log.debug(f"receive Pong from {user.name}")
                     self._ping.set()
                 else:
                     self.core_que.put((user, msg_body))
@@ -576,7 +580,7 @@ class Core:
         if not bio.closed:
             bio.close()
         if not self.remove_connection(user, error):
-            log.debug("Failed remove user {}".format(user.name))
+            log.debug(f"failed remove user {user.name}")
 
     def is_reachable(self, new_user):
         # Check connect to the user TCP/UDP port
@@ -600,25 +604,33 @@ class Core:
         f_changed = False
         # reflect user status
         if f_tcp is not new_user.p2p_accept:
-            log.debug("{} Update TCP accept status [{}>{}]".format(new_user, new_user.p2p_accept, f_tcp))
+            log.debug(f"{new_user} Update TCP accept status {new_user.p2p_accept}>{f_tcp}")
             new_user.p2p_accept = f_tcp
             f_changed = True
         if f_udp is not new_user.p2p_udp_accept:
-            log.debug("{} Update UDP accept status [{}>{}]".format(new_user, new_user.p2p_udp_accept, f_udp))
+            log.debug(f"{new_user} Update UDP accept status {new_user.p2p_udp_accept}>{f_udp}")
             new_user.p2p_udp_accept = f_udp
             f_changed = True
         # if f_changed:
         #    log.info("{} Change TCP/UDP accept status tcp={} udp={}"
         #                 .format(new_user, f_tcp, f_udp))
 
-    def name2user(self, name):
+    def name2user(self, name) -> Optional[User]:
         for user in self.user:
             if user.name == name:
                 return user
         return None
 
-    def host_port2user(self, host_port):
+    def host_port2user(self, host_port) -> Optional[User]:
         for user in self.user:
             if host_port == user.get_host_port():
                 return user
         return None
+
+
+__all__ = [
+    "SERVER_SIDE",
+    "CLIENT_SIDE",
+    "ban_address",
+    "Core",
+]
