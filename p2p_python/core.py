@@ -522,44 +522,40 @@ class Core(object):
 """
 
 
-def tcp_server_listen(core: Core):
+def tcp_server_listen(server_sock, core: Core):
     """TCP server new connection control"""
-    def handle(server_sock, mask):
-        try:
-            sock, host_port = server_sock.accept()
-            sock.setblocking(True)
-            Thread(target=core.initial_connection_check, args=(sock, host_port), daemon=True).start()
-            log.info(f"server accept from {host_port}")
-        except OSError as e:
-            log.debug(f"OSError {str(e)}")
-        except Exception as e:
-            log.debug(e, exc_info=Debug.P_EXCEPTION)
-    return handle
+    try:
+        sock, host_port = server_sock.accept()
+        sock.setblocking(True)
+        Thread(target=core.initial_connection_check, args=(sock, host_port), daemon=True).start()
+        log.info(f"server accept from {host_port}")
+    except OSError as e:
+        log.debug(f"OSError {str(e)}")
+    except Exception as e:
+        log.debug(e, exc_info=Debug.P_EXCEPTION)
 
 
-def udp_server_listen(core: Core):
+def udp_server_listen(server_sock, core: Core):
     """UDP server new connection control"""
-    def handle(server_sock, mask):
-        try:
-            msg, address = server_sock.recvfrom(8192)
-            msg_len = msg[0]
-            msg_name, msg_body = msg[1:msg_len + 1], msg[msg_len + 1:]
-            user = core.name2user(msg_name.decode())
-            if user is None:
-                return
-            core.traffic.put_traffic_down(msg_body)
-            msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
-            if msg_body == b'Ping':
-                log.info(f"get udp accept from {user}")
-                core.send_msg_body(msg_body=b'Pong', user=user)
-            else:
-                log.debug(f"get udp packet from {user}")
-                core.core_que.put((user, msg_body))
-        except OSError as e:
-            log.debug(f"OSError {str(e)}")
-        except Exception as e:
-            log.debug(e, exc_info=Debug.P_EXCEPTION)
-    return handle
+    try:
+        msg, address = server_sock.recvfrom(8192)
+        msg_len = msg[0]
+        msg_name, msg_body = msg[1:msg_len + 1], msg[msg_len + 1:]
+        user = core.name2user(msg_name.decode())
+        if user is None:
+            return
+        core.traffic.put_traffic_down(msg_body)
+        msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
+        if msg_body == b'Ping':
+            log.info(f"get udp accept from {user}")
+            core.send_msg_body(msg_body=b'Pong', user=user)
+        else:
+            log.debug(f"get udp packet from {user}")
+            core.core_que.put((user, msg_body))
+    except OSError as e:
+        log.debug(f"OSError {str(e)}")
+    except Exception as e:
+        log.debug(e, exc_info=Debug.P_EXCEPTION)
 
 
 def create_tcp_server_socks(core: Core, s_family):
@@ -584,7 +580,7 @@ def create_tcp_server_socks(core: Core, s_family):
             log.debug(f"failed tcp bind or listen {sa}")
             continue
         if af == socket.AF_INET or af == socket.AF_INET6:
-            listen_sel.register(sock, selectors.EVENT_READ, tcp_server_listen(core))
+            listen_sel.register(sock, selectors.EVENT_READ, tcp_server_listen)
             sock_type = "IPV4" if sock.family == 2 else "IPV6"
             log.info(f"new tcp server {sock_type} {sa}")
         else:
@@ -612,7 +608,7 @@ def create_udp_server_socks(core: Core, s_family):
             log.debug(f"failed udp bind {sa}")
             continue
         if af == socket.AF_INET or af == socket.AF_INET6:
-            listen_sel.register(sock, selectors.EVENT_READ, udp_server_listen(core))
+            listen_sel.register(sock, selectors.EVENT_READ, udp_server_listen)
             sock_type = "IPV4" if sock.family == 2 else "IPV6"
             log.info(f"new udp server {sock_type} {sa}")
         else:
@@ -635,7 +631,7 @@ def sock_listen_loop(core: Core):
             events = listen_sel.select()
             for key, mask in events:
                 callback = key.data
-                callback(key.fileobj, mask)
+                callback(key.fileobj, core)
         except Exception as e:
             log.error(e)
             sleep(3)
