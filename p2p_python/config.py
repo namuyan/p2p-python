@@ -8,9 +8,6 @@ class C:
     T_SERVER = 'type/server'
     T_CLIENT = 'type/client'
 
-    # Master key
-    MASTER_KEYS = []
-
 
 class V:
     # path

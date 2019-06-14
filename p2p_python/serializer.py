@@ -1,21 +1,11 @@
 import msgpack
 
 
-def only_key_check(obj):
-    if isinstance(obj, dict):
-        for k in obj.keys():
-            if isinstance(k, str) or isinstance(k, int) or isinstance(k, bytes):
-                continue
-            else:
-                raise TypeError('msgpack dict key don\'t allow {}'.format(type(k)))
-    return obj
-
-
-def dump(obj, fp, default=only_key_check):
+def dump(obj, fp, default=None):
     msgpack.pack(obj, fp, use_bin_type=True, default=default)
 
 
-def dumps(obj, default=only_key_check):
+def dumps(obj, default=None):
     return msgpack.packb(obj, use_bin_type=True, default=default)
 
 
@@ -32,7 +22,6 @@ def stream_unpacker(fp, object_hook=None):
 
 
 __all__ = [
-    "only_key_check",
     "dump",
     "dumps",
     "load",

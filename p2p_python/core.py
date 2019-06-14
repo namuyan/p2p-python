@@ -32,6 +32,7 @@ class Core(object):
 
     def __init__(self, host=None, listen=15, buffsize=4096):
         assert V.DATA_PATH is not None, 'Setup p2p params before CoreClass init.'
+        assert host is None or host == 'localhost'
         # status params
         self.f_stop = False
         self.f_finish = False
@@ -48,8 +49,6 @@ class Core(object):
         self.traffic = Traffic()
         self._ping = Event()
         self._ping.set()
-        self.udp_ipv4_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udp_ipv6_sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
 
     def close(self):
         if not self.f_running:
@@ -74,124 +73,16 @@ class Core(object):
             return False
 
     def start(self, s_family=socket.AF_UNSPEC):
-
-        def tcp_server_listen(server_sock, mask):
-            try:
-                sock, host_port = server_sock.accept()
-                sock.setblocking(True)
-                Thread(target=self._initial_connection_check, args=(sock, host_port), daemon=True).start()
-                log.info(f"server accept from {host_port}")
-            except OSError as e:
-                log.debug(f"OSError {str(e)}")
-            except Exception as e:
-                log.debug(e, exc_info=Debug.P_EXCEPTION)
-
-        def udp_server_listen(server_sock, mask):
-            try:
-                msg, address = server_sock.recvfrom(8192)
-                msg_len = msg[0]
-                msg_name, msg_body = msg[1:msg_len + 1], msg[msg_len + 1:]
-                user = self.name2user(msg_name.decode())
-                if user is None:
-                    return
-                self.traffic.put_traffic_down(msg_body)
-                msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
-                if msg_body == b'Ping':
-                    log.info(f"get udp accept from {user}")
-                    self.send_msg_body(msg_body=b'Pong', user=user)
-                else:
-                    log.debug(f"get udp packet from {user}")
-                    self.core_que.put((user, msg_body))
-            except OSError as e:
-                log.debug(f"OSError {str(e)}")
-            except Exception as e:
-                log.debug(e, exc_info=Debug.P_EXCEPTION)
-
-        def create_tcp_server_socks():
-            for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_STREAM, 0,
-                                          socket.AI_PASSIVE):
-                af, sock_type, proto, canon_name, sa = res
-                try:
-                    sock = socket.socket(af, sock_type, proto)
-                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                except OSError as e:
-                    log.debug(f"failed tcp socket {sa}")
-                    continue
-                try:
-                    sock.bind(sa)
-                    sock.listen(self.listen)
-                    sock.setblocking(False)
-                except OSError as e:
-                    try:
-                        sock.close()
-                    except OSError:
-                        pass
-                    log.debug(f"failed tcp bind or listen {sa}")
-                    continue
-                if af == socket.AF_INET or af == socket.AF_INET6:
-                    listen_sel.register(sock, selectors.EVENT_READ, tcp_server_listen)
-                    sock_type = "IPV4" if sock.family == 2 else "IPV6"
-                    log.info(f"new tcp server {sock_type} {sa}")
-                else:
-                    log.warning(f"not found socket type {af}")
-            if len(listen_sel.get_map()) == 0:
-                log.error("could not open tcp sockets")
-                V.P2P_ACCEPT = False
-
-        def create_udp_server_socks():
-            before_num = len(listen_sel.get_map())
-            for res in socket.getaddrinfo(self.host, V.P2P_PORT, s_family, socket.SOCK_DGRAM, 0,
-                                          socket.AI_PASSIVE):
-                af, sock_type, proto, canon_name, sa = res
-                try:
-                    sock = socket.socket(af, sock_type, proto)
-                except OSError as e:
-                    log.debug(f"failed udp socket {sa}")
-                    continue
-                try:
-                    sock.bind(sa)
-                    sock.setblocking(False)
-                except OSError as e:
-                    sock.close()
-                    log.debug(f"failed udp bind {sa}")
-                    continue
-                if af == socket.AF_INET or af == socket.AF_INET6:
-                    listen_sel.register(sock, selectors.EVENT_READ, udp_server_listen)
-                    sock_type = "IPV4" if sock.family == 2 else "IPV6"
-                    log.info(f"new udp server {sock_type} {sa}")
-                else:
-                    log.warning(f"not found socket type {af}")
-            if len(listen_sel.get_map()) == before_num:
-                log.error("could not open udp sockets")
-                V.P2P_UDP_ACCEPT = False
-
-        def sock_listen_loop():
-            while not self.f_stop:
-                try:
-                    listen_map = listen_sel.get_map()
-                    if listen_map is None:
-                        log.debug("close sock listen loop")
-                        return
-                    while len(listen_map) == 0:
-                        sleep(0.5)
-                    events = listen_sel.select()
-                    for key, mask in events:
-                        callback = key.data
-                        callback(key.fileobj, mask)
-                except Exception as e:
-                    log.error(e)
-                    sleep(3)
-
         assert s_family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
         self.traffic.start()
         # Pooling connection
         if V.P2P_ACCEPT:
-            create_tcp_server_socks()
+            create_tcp_server_socks(core=self, s_family=s_family)
         if V.P2P_UDP_ACCEPT:
-            create_udp_server_socks()
+            create_udp_server_socks(core=self, s_family=s_family)
         # listen socket ipv4/ipv6
         if V.P2P_ACCEPT or V.P2P_UDP_ACCEPT:
-            Thread(target=sock_listen_loop, name='Listen', daemon=True).start()
+            Thread(target=sock_listen_loop, args=(self,), name='Listen', daemon=True).start()
         else:
             log.info("set p2p accept flag = False")
         self.f_running = True
@@ -296,7 +187,7 @@ class Core(object):
 
             # 9. accept connection
             log.info(f"New connection to {new_user.name} {new_user.get_host_port()}")
-            Thread(target=self._receive_msg, name='C:' + new_user.name, args=(new_user,), daemon=True).start()
+            Thread(target=self.receive_loop, name='C:' + new_user.name, args=(new_user,), daemon=True).start()
 
             c = 20
             while new_user not in self.user and c > 0:
@@ -326,7 +217,7 @@ class Core(object):
             pass
         return False
 
-    def remove_connection(self, user, reason=None):
+    def remove_connection(self, user, reason=None) -> bool:
         if user is None:
             return False
         try:
@@ -346,7 +237,7 @@ class Core(object):
 
     def send_msg_body(self, msg_body, user=None, status=200, f_udp=False, f_pro_force=False):
         # StatusCode: https://ja.wikipedia.org/wiki/HTTPステータスコード
-        assert type(msg_body) == bytes, 'msg_body is bytes'
+        assert isinstance(msg_body, bytes), 'msg_body is bytes'
         assert 200 <= status < 600, 'Not found status code {}'.format(status)
 
         # get client
@@ -380,13 +271,12 @@ class Core(object):
         msg_body = AESCipher.encrypt(key=user.aeskey, raw=msg_body)
         send_data = name_len + V.SERVER_NAME.encode() + msg_body
         host_port = user.get_host_port()
-        if len(host_port) == 2:
-            self.udp_ipv4_sock.sendto(send_data, host_port)
-        else:
-            self.udp_ipv6_sock.sendto(send_data, host_port)
+        sock_family = socket.AF_INET if len(host_port) == 2 else socket.AF_INET6
+        with socket.socket(sock_family, socket.SOCK_DGRAM) as sock:
+            sock.sendto(send_data, host_port)
         self.traffic.put_traffic_up(send_data)
 
-    def _initial_connection_check(self, sock, host_port):
+    def initial_connection_check(self, sock, host_port):
         current_thread().setName('InitCheck')
         sock.settimeout(10)
         try:
@@ -446,7 +336,7 @@ class Core(object):
 
             # 8. accept connection
             log.info(f"New connection from {new_user.name} {new_user.get_host_port()}")
-            Thread(target=self._receive_msg, name='S:' + new_user.name, args=(new_user,), daemon=True).start()
+            Thread(target=self.receive_loop, name='S:' + new_user.name, args=(new_user,), daemon=True).start()
             # Port accept check
             sleep(10)
             if new_user in self.user:
@@ -471,7 +361,7 @@ class Core(object):
         except OSError:
             pass
 
-    def _receive_msg(self, user):
+    def receive_loop(self, user):
         # Accept connection
         with self.lock:
             for check_user in self.user:
@@ -626,6 +516,129 @@ class Core(object):
             if host_port == user.get_host_port():
                 return user
         return None
+
+
+"""socket connection functions
+"""
+
+
+def tcp_server_listen(core: Core):
+    """TCP server new connection control"""
+    def handle(server_sock, mask):
+        try:
+            sock, host_port = server_sock.accept()
+            sock.setblocking(True)
+            Thread(target=core.initial_connection_check, args=(sock, host_port), daemon=True).start()
+            log.info(f"server accept from {host_port}")
+        except OSError as e:
+            log.debug(f"OSError {str(e)}")
+        except Exception as e:
+            log.debug(e, exc_info=Debug.P_EXCEPTION)
+    return handle
+
+
+def udp_server_listen(core: Core):
+    """UDP server new connection control"""
+    def handle(server_sock, mask):
+        try:
+            msg, address = server_sock.recvfrom(8192)
+            msg_len = msg[0]
+            msg_name, msg_body = msg[1:msg_len + 1], msg[msg_len + 1:]
+            user = core.name2user(msg_name.decode())
+            if user is None:
+                return
+            core.traffic.put_traffic_down(msg_body)
+            msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
+            if msg_body == b'Ping':
+                log.info(f"get udp accept from {user}")
+                core.send_msg_body(msg_body=b'Pong', user=user)
+            else:
+                log.debug(f"get udp packet from {user}")
+                core.core_que.put((user, msg_body))
+        except OSError as e:
+            log.debug(f"OSError {str(e)}")
+        except Exception as e:
+            log.debug(e, exc_info=Debug.P_EXCEPTION)
+    return handle
+
+
+def create_tcp_server_socks(core: Core, s_family):
+    """create new TCP socket server"""
+    for res in socket.getaddrinfo(core.host, V.P2P_PORT, s_family, socket.SOCK_STREAM, 0, socket.AI_PASSIVE):
+        af, sock_type, proto, canon_name, sa = res
+        try:
+            sock = socket.socket(af, sock_type, proto)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except OSError as e:
+            log.debug(f"failed tcp socket {sa}")
+            continue
+        try:
+            sock.bind(sa)
+            sock.listen(core.listen)
+            sock.setblocking(False)
+        except OSError as e:
+            try:
+                sock.close()
+            except OSError:
+                pass
+            log.debug(f"failed tcp bind or listen {sa}")
+            continue
+        if af == socket.AF_INET or af == socket.AF_INET6:
+            listen_sel.register(sock, selectors.EVENT_READ, tcp_server_listen(core))
+            sock_type = "IPV4" if sock.family == 2 else "IPV6"
+            log.info(f"new tcp server {sock_type} {sa}")
+        else:
+            log.warning(f"not found socket type {af}")
+    if len(listen_sel.get_map()) == 0:
+        log.error("could not open tcp sockets")
+        V.P2P_ACCEPT = False
+
+
+def create_udp_server_socks(core: Core, s_family):
+    """create new UDP socket server"""
+    before_num = len(listen_sel.get_map())
+    for res in socket.getaddrinfo(core.host, V.P2P_PORT, s_family, socket.SOCK_DGRAM, 0, socket.AI_PASSIVE):
+        af, sock_type, proto, canon_name, sa = res
+        try:
+            sock = socket.socket(af, sock_type, proto)
+        except OSError as e:
+            log.debug(f"failed udp socket {sa}")
+            continue
+        try:
+            sock.bind(sa)
+            sock.setblocking(False)
+        except OSError as e:
+            sock.close()
+            log.debug(f"failed udp bind {sa}")
+            continue
+        if af == socket.AF_INET or af == socket.AF_INET6:
+            listen_sel.register(sock, selectors.EVENT_READ, udp_server_listen(core))
+            sock_type = "IPV4" if sock.family == 2 else "IPV6"
+            log.info(f"new udp server {sock_type} {sa}")
+        else:
+            log.warning(f"not found socket type {af}")
+    if len(listen_sel.get_map()) == before_num:
+        log.error("could not open udp sockets")
+        V.P2P_UDP_ACCEPT = False
+
+
+def sock_listen_loop(core: Core):
+    """TCP/UDP server's selector"""
+    while not core.f_stop:
+        try:
+            listen_map = listen_sel.get_map()
+            if listen_map is None:
+                log.debug("close sock listen loop")
+                return
+            while len(listen_map) == 0:
+                sleep(0.5)
+            events = listen_sel.select()
+            for key, mask in events:
+                callback = key.data
+                callback(key.fileobj, mask)
+        except Exception as e:
+            log.error(e)
+            sleep(3)
 
 
 __all__ = [

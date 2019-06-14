@@ -74,7 +74,7 @@ class AESCipher:
         return raw
 
 
-class Peers:
+class PeerData(object):
 
     def __init__(self, path):
         """recode all node, don't remove"""
@@ -127,5 +127,5 @@ class Peers:
 __all__ = [
     "EventIgnition",
     "AESCipher",
-    "Peers",
+    "PeerData",
 ]
