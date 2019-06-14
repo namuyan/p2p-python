@@ -1,5 +1,5 @@
 from p2p_python.tool.utils import *
-from p2p_python.tool.upnpc import UpnpClient
+from p2p_python.tool.upnpc import *
 from p2p_python.config import V, Debug, PeerToPeerError
 from p2p_python.core import Core, ban_address
 from p2p_python.utils import is_reachable
@@ -18,9 +18,9 @@ import socket
 
 log = getLogger(__name__)
 
-LOCAL_IP = UpnpClient.get_localhost_ip()
-GLOBAL_IPV4 = UpnpClient.get_global_ip()
-GLOBAL_IPV6 = UpnpClient.get_global_ip_ipv6()
+LOCAL_IP = get_localhost_ip()
+GLOBAL_IPV4 = get_global_ip()
+GLOBAL_IPV6 = get_global_ip_ipv6()
 STICKY_LIMIT = 2
 
 # Constant type
