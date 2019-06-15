@@ -6,10 +6,12 @@ from p2p_python.utils import is_reachable
 from p2p_python.user import User
 from p2p_python.serializer import *
 from threading import Thread, get_ident
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from expiringdict import ExpiringDict
 from time import time, sleep
 from logging import getLogger
 from collections import deque
+from typing import Dict
 import os.path
 import random
 import queue
@@ -51,8 +53,7 @@ class Peer2Peer(object):
         self.core = Core(host='localhost' if f_local else None, listen=listen)
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
         self._broadcast_uuid = deque(maxlen=listen * 20)  # Broadcastされたuuid
-        self._user2user_route = ExpiringDict(max_len=1000, max_age_seconds=900)
-        self._result_ques = ExpiringDict(max_len=1000, max_age_seconds=900)
+        self._result_ques: Dict[int, Future] = ExpiringDict(max_len=1000, max_age_seconds=900)
         self.peers = PeerData(os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
@@ -205,9 +206,9 @@ class Peer2Peer(object):
         data = item['data']
         uuid = item['uuid']
         if uuid in self._result_ques:
-            que = self._result_ques[uuid]
-            if que:
-                que.put((user, data))
+            future = self._result_ques[uuid]
+            if not future.done():
+                future.set_result((user, data))
             # log.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
             # log.debug("2:Data is '{}'".format(trim_msg(str(data), 80)))
 
@@ -217,9 +218,9 @@ class Peer2Peer(object):
         uuid = item['uuid']
 
         if uuid in self._result_ques:
-            que = self._result_ques[uuid]
-            if que:
-                que.put((user, data))
+            future = self._result_ques[uuid]
+            if not future.done():
+                future.set_result((user, data))
             # log.debug("Get ack from {}".format(user.name))
 
     def _send_msg(self, item, allows=None, denys=None, f_udp=False):
@@ -266,8 +267,8 @@ class Peer2Peer(object):
             raise PeerToPeerError('timeout is zero.')
 
         # 3. Send message to a node or some nodes
-        que = queue.Queue()
-        self._result_ques[uuid] = que
+        future = Future()
+        self._result_ques[uuid] = future
         send_num = self._send_msg(item=temperate, allows=allows, f_udp=f_udp)
         if send_num == 0:
             raise PeerToPeerError('We try to send no client? {}clients connected.'.format(len(self.core.user)))
@@ -275,14 +276,13 @@ class Peer2Peer(object):
         # 4. Get response
         item = None
         try:
-            user, item = que.get(timeout=timeout)
+            user, item = future.result(timeout)
             user.warn = 0
-            self._result_ques[uuid] = None
             f_success = True
-        except queue.Empty:
+        except FutureTimeoutError:
             if user:
                 user.warn += 1
-            self._result_ques[uuid] = None
+            future.cancel()
             f_success = False
 
         # 5. Process response
