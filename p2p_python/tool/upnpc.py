@@ -76,21 +76,24 @@ def cast_rooter_request(host='239.255.255.250', port=1900) -> Optional[str]:
                 return e[10:]
     except socket.timeout:
         pass
-    except Exception as e:
-        log.debug(e, exc_info=True)
+    except Exception:
+        log.debug("cast_rooter_request exception", exc_info=True)
     return None
 
 
 def get_soap_url(request_url) -> Optional[str]:
     """get soap url"""
-    xml_string = requests.get(url=request_url).text
-    xml = ElementTree.fromstring(xml_string)
-    ns = {'ns': 'urn:schemas-upnp-org:device-1-0'}
-    for child in xml.findall(".//ns:service", ns):
-        if child.find('ns:serviceType', ns).text == 'urn:schemas-upnp-org:service:WANIPConnection:1':
-            control_url = child.find('ns:controlURL', ns).text
-            parse = urlparse(request_url)
-            return "{0}://{1}/{2}".format(parse.scheme, parse.netloc, control_url)
+    try:
+        xml_string = requests.get(url=request_url).text
+        xml = ElementTree.fromstring(xml_string)
+        ns = {'ns': 'urn:schemas-upnp-org:device-1-0'}
+        for child in xml.findall(".//ns:service", ns):
+            if child.find('ns:serviceType', ns).text == 'urn:schemas-upnp-org:service:WANIPConnection:1':
+                control_url = child.find('ns:controlURL', ns).text
+                parse = urlparse(request_url)
+                return "{0}://{1}/{2}".format(parse.scheme, parse.netloc, control_url)
+    except Exception:
+        log.debug("get_soap_url exception", exc_info=True)
     return None
 
 
@@ -109,13 +112,13 @@ def soap_get_mapping(soap_url) -> List[Mapping]:
         soap += '</s:Body>\r\n'
         soap += '</s:Envelope>\r\n'
 
-        req = Request(soap_url)
-        req.add_header('Content-Type', 'text/xml; charset="utf-8"')
-        req.add_header('SOAPACTION',
-                       '"urn:schemas-upnp-org:service:WANPPPConnection:1#GetGenericPortMappingEntry"')
-        req.data = soap.encode('utf8')
-
         try:
+            req = Request(soap_url)
+            req.add_header('Content-Type', 'text/xml; charset="utf-8"')
+            req.add_header('SOAPACTION',
+                           '"urn:schemas-upnp-org:service:WANPPPConnection:1#GetGenericPortMappingEntry"')
+            req.data = soap.encode('utf8')
+
             result = xmltodict.parse(urlopen(req).read().decode())
             data = dict(result['s:Envelope']['s:Body']['u:GetGenericPortMappingEntryResponse'])
             ports.append(Mapping(
@@ -130,7 +133,7 @@ def soap_get_mapping(soap_url) -> List[Mapping]:
             ))
         except Exception as e:
             if '500' not in str(e):
-                log.debug(e)
+                log.debug("soap_get_mapping exception", exc_info=True)
             break
         i_d += 1
     return ports
@@ -165,17 +168,17 @@ def soap_add_mapping(soap_url, external_port, internal_port, internal_client,
     soap += '</s:Body>\r\n'
     soap += '</s:Envelope>\r\n'
 
-    req = Request(soap_url)
-    req.add_header('Content-Type', 'text/xml; charset="utf-8"')
-    req.add_header('SOAPACTION', '"urn:schemas-upnp-org:service:WANPPPConnection:1#AddPortMapping"')
-    req.data = soap.encode('utf8')
-
     try:
+        req = Request(soap_url)
+        req.add_header('Content-Type', 'text/xml; charset="utf-8"')
+        req.add_header('SOAPACTION', '"urn:schemas-upnp-org:service:WANPPPConnection:1#AddPortMapping"')
+        req.data = soap.encode('utf8')
+
         result = xmltodict.parse(urlopen(req).read().decode())
         if "@xmlns:u" in result["s:Envelope"]["s:Body"]["u:AddPortMappingResponse"]:
             return Mapping(1, external_port, internal_client, internal_port, duration, description, protocol, None)
-    except Exception as e:
-        log.error(e)
+    except Exception:
+        log.error("soap_add_mapping exception", exc_info=True)
     return None
 
 
@@ -197,17 +200,17 @@ def soap_delete_mapping(soap_url, external_port, protocol='TCP') -> bool:
     soap += '</s:Body>\r\n'
     soap += '</s:Envelope>\r\n'
 
-    req = Request(soap_url)
-    req.add_header('Content-Type', 'text/xml; charset="utf-8"')
-    req.add_header('SOAPACTION', '"urn:schemas-upnp-org:service:WANPPPConnection:1#DeletePortMapping"')
-    req.data = soap.encode('utf8')
-
     try:
+        req = Request(soap_url)
+        req.add_header('Content-Type', 'text/xml; charset="utf-8"')
+        req.add_header('SOAPACTION', '"urn:schemas-upnp-org:service:WANPPPConnection:1#DeletePortMapping"')
+        req.data = soap.encode('utf8')
+
         result = xmltodict.parse(urlopen(req).read().decode())
         if "@xmlns:u" in result["s:Envelope"]["s:Body"]["u:DeletePortMappingResponse"]:
             return True
-    except Exception as e:
-        log.error(e)
+    except Exception:
+        log.error("soap_delete_mapping exception", exc_info=True)
     return False
 
 
@@ -222,12 +225,15 @@ def get_external_ip(soap_url) -> str:
     s_o_a_p += '</s:Body>\r\n'
     s_o_a_p += '</s:Envelope>\r\n'
 
-    req = Request(soap_url)
-    req.add_header('Content-Type', 'text/xml; charset="utf-8"')
-    req.add_header('SOAPACTION', '"urn:schemas-upnp-org:service:WANPPPConnection:1#GetExternalIPAddress"')
-    req.data = s_o_a_p.encode('utf8')
-    result = xmltodict.parse(urlopen(req).read().decode())
-    return result['s:Envelope']['s:Body']['u:GetExternalIPAddressResponse']['NewExternalIPAddress']
+    try:
+        req = Request(soap_url)
+        req.add_header('Content-Type', 'text/xml; charset="utf-8"')
+        req.add_header('SOAPACTION', '"urn:schemas-upnp-org:service:WANPPPConnection:1#GetExternalIPAddress"')
+        req.data = s_o_a_p.encode('utf8')
+        result = xmltodict.parse(urlopen(req).read().decode())
+        return result['s:Envelope']['s:Body']['u:GetExternalIPAddressResponse']['NewExternalIPAddress']
+    except Exception:
+        log.debug("get_external_ip exception", exc_info=True)
 
 
 def get_localhost_ip():
@@ -237,7 +243,7 @@ def get_localhost_ip():
             (s.connect((NAME_SERVER, 80)), s.getsockname()[0], s.close())
             for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]
         ][0][1]
-    except Exception as e:
+    except Exception:
         return '127.0.0.1'
 
 
@@ -253,7 +259,7 @@ def get_global_ip():
     for url in network_info_providers:
         try:
             return requests.get(url).text.lstrip().rstrip()
-        except Exception as e:
+        except Exception:
             continue
     else:
         log.info('cannot find global ip')
@@ -270,7 +276,7 @@ def get_global_ip_ipv6():
     for url in network_info_providers:
         try:
             return requests.get(url).text.lstrip().rstrip()
-        except Exception as e:
+        except Exception:
             continue
     else:
         log.info('cannot find global ipv6 ip')
