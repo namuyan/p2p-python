@@ -1,5 +1,7 @@
 from p2p_python.serializer import stream_unpacker, dump
+from p2p_python.user import UserHeader, User
 from logging import getLogger
+from typing import Dict, Optional
 from time import time
 import os
 
@@ -78,14 +80,14 @@ class PeerData(object):
 
     def __init__(self, path):
         """recode all node, don't remove"""
-        self._peer = dict()  # {(host, port): header,..}
+        self._peer: Dict[(str, int), UserHeader] = dict()  # {(host, port): header,..}
         self.path = path
-        self.cleanup()
+        self.init_cleanup()
 
-    def get(self, host_port):
+    def get(self, host_port) -> Optional[UserHeader]:
         return self._peer.get(tuple(host_port))
 
-    def remove(self, host_port):
+    def remove_from_memory(self, host_port):
         host_port = tuple(host_port)
         if host_port in self._peer:
             del self._peer[tuple(host_port)]
@@ -101,27 +103,33 @@ class PeerData(object):
     def keys(self):
         yield from self._peer.keys()
 
+    def items(self):
+        yield from self._peer.items()
+
     def copy(self):
         return self._peer.copy()
 
-    def add(self, host_port, data):
-        self._peer[tuple(host_port)] = data
+    def add(self, user: User):
+        host_port = user.get_host_port()
+        self._peer[host_port] = user.header
         with open(self.path, mode='ba') as fp:
-            dump((host_port, data), fp)
+            header = user.header.getinfo()
+            dump((host_port, header), fp)
 
-    def cleanup(self):
+    def init_cleanup(self):
         time_limit = int(time() - 3600*24*30)
         try:
             with open(self.path, mode='br') as fp:
-                for k, v in stream_unpacker(fp):
-                    # if time_limit < v['last_seen']:
-                    #    self._peer[tuple(k)] = v
-                    self._peer[tuple(k)] = v
+                for host_port, header_dict in stream_unpacker(fp):
+                    header = UserHeader(**header_dict)
+                    if time_limit < header.last_seen:
+                        self._peer[tuple(host_port)] = header
+            # re recode
+            with open(self.path, mode='bw') as fp:
+                for host_port, header in self._peer.items():
+                    dump((host_port, header.getinfo()), fp)
         except Exception:
             pass
-        with open(self.path, mode='bw') as fp:
-            for k, v in self._peer.items():
-                dump((k, v), fp)
 
 
 __all__ = [

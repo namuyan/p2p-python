@@ -11,7 +11,7 @@ from expiringdict import ExpiringDict
 from time import time, sleep
 from logging import getLogger
 from collections import deque
-from typing import Dict
+from typing import Dict, Optional
 import os.path
 import random
 import queue
@@ -73,7 +73,7 @@ class Peer2Peer(object):
         def processing():
             self.threadid = get_ident()
             while not self.f_stop:
-                user = msg_body = None
+                user: Optional[User] = None
                 try:
                     user, msg_body = self.core.core_que.get(timeout=1)
                     item = loads(b=msg_body, object_hook=self.object_hook)
@@ -86,7 +86,7 @@ class Peer2Peer(object):
                             self.type_request(user=user, item=item)
                     elif item['type'] == T_RESPONSE:
                         self.type_response(user=user, item=item)
-                        user.last_seen = int(time())
+                        user.header.update_last_seen()
                     elif item['type'] == T_ACK:
                         self.type_ack(user=user, item=item)
                     else:
@@ -94,8 +94,9 @@ class Peer2Peer(object):
                 except queue.Empty:
                     pass
                 except Exception as e:
-                    self.core.remove_connection(user)
-                    log.debug(f"Processing error {user.name}", exc_info=Debug.P_EXCEPTION)
+                    if user is not None:
+                        self.core.remove_connection(user)
+                        log.debug(f"Processing error {user}", exc_info=Debug.P_EXCEPTION)
             self.f_finish = True
             self.f_running = False
             log.info("close processing")
@@ -109,7 +110,7 @@ class Peer2Peer(object):
                 except queue.Empty:
                     pass
                 except Exception as e:
-                    log.debug(f"Processing error {user.name}", exc_info=Debug.P_EXCEPTION)
+                    log.debug(f"Processing error {user}", exc_info=Debug.P_EXCEPTION)
             log.info("close broadcast")
 
         self.core.start(s_family=s_family)
@@ -161,19 +162,19 @@ class Peer2Peer(object):
 
         elif item['cmd'] == Peer2PeerCmd.GET_PEER_INFO:
             # [[(host,port), header],..]
-            temperate['data'] = list(self.peers.copy().items())
+            temperate['data'] = [(host_port, header.getinfo()) for host_port, header in self.peers.copy().items()]
             allow_list.append(user)
 
         elif item['cmd'] == Peer2PeerCmd.GET_NEARS:
             # [[(host,port), header],..]
-            temperate['data'] = [(user.get_host_port(), user.serialize()) for user in self.core.user]
+            temperate['data'] = [(user.get_host_port(), user.header.getinfo()) for user in self.core.user]
             allow_list.append(user)
 
         elif item['cmd'] == Peer2PeerCmd.CHECK_REACHABLE:
             try:
                 port = item['data']['port']
             except Exception as e:
-                port = user.p2p_port
+                port = user.header.p2p_port
             temperate['data'] = is_reachable(host=user.host_port[0], port=port)
             allow_list.append(user)
 
@@ -209,11 +210,9 @@ class Peer2Peer(object):
             future = self._result_ques[uuid]
             if not future.done():
                 future.set_result((user, data))
-            # log.debug("Get response from {}, cmd={}, uuid={}".format(user.name, cmd, uuid))
-            # log.debug("2:Data is '{}'".format(trim_msg(str(data), 80)))
 
     def type_ack(self, user: User, item: dict):
-        cmd = item['cmd']
+        # cmd = item['cmd']
         data = item['data']
         uuid = item['uuid']
 
@@ -221,7 +220,6 @@ class Peer2Peer(object):
             future = self._result_ques[uuid]
             if not future.done():
                 future.set_result((user, data))
-            # log.debug("Get ack from {}".format(user.name))
 
     def _send_msg(self, item, allows=None, denys=None, f_udp=False):
         msg_body = dumps(obj=item, default=self.default_hook)
@@ -240,7 +238,7 @@ class Peer2Peer(object):
                     user.warn += 1
                     if 5 < user.warn:
                         self.try_reconnect(user=user, reason="failed to send msg.")
-                    log.debug(f"failed send msg to {user.name} {str(e)}")
+                    log.debug(f"failed send msg to {user} {str(e)}")
         return c  # how many send
 
     def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10):
@@ -292,7 +290,7 @@ class Peer2Peer(object):
             if user:
                 if 5 < user.warn:
                     self.try_reconnect(user=user, reason="Timeout by waiting '{}'".format(cmd))
-                raise TimeoutError('command timeout {} {} {} {}'.format(cmd, uuid, user.name, data))
+                raise TimeoutError(f"command timeout {cmd} {uuid} {user} {data}")
             else:
                 raise TimeoutError('command timeout on broadcast to {}users, {} {}'.format(
                     len(allows), uuid, data))
@@ -301,9 +299,9 @@ class Peer2Peer(object):
         self.core.remove_connection(user, reason)
         host_port = user.get_host_port()
         if self.core.create_connection(host=host_port[0], port=host_port[1]):
-            log.debug(f"reconnect success {user.name}:{host_port}")
+            log.debug(f"reconnect success {user}:{host_port}")
         else:
-            log.warning(f"reconnect failed {user.name}:{host_port}")
+            log.warning(f"reconnect failed {user}:{host_port}")
 
     def send_direct_cmd(self, cmd, data, user=None, uuid=None):
         if len(self.core.user) == 0:
@@ -341,14 +339,14 @@ def auto_stabilize_network(p2p: Peer2Peer):
         random.shuffle(peer_host_port)
         for host_port in peer_host_port:
             if host_port in ignore_peers:
-                p2p.peers.remove(host_port)
+                p2p.peers.remove_from_memory(host_port)
                 continue
             header = p2p.peers.get(host_port)
-            if header['p2p_accept']:
+            if header.p2p_accept:
                 if p2p.core.create_connection(host=host_port[0], port=host_port[1]):
                     need -= 1
                 else:
-                    p2p.peers.remove(host_port)
+                    p2p.peers.remove_from_memory(host_port)
             if need <= 0:
                 break
             else:
@@ -372,12 +370,12 @@ def auto_stabilize_network(p2p: Peer2Peer):
             if len(p2p.core.user) == 0 and len(p2p.peers) > 0:
                 host_port = random.choice(list(p2p.peers.keys()))
                 if host_port in ignore_peers:
-                    p2p.peers.remove(host_port)
+                    p2p.peers.remove_from_memory(host_port)
                     continue
                 if p2p.core.create_connection(host_port[0], host_port[1]):
                     sleep(5)
                 else:
-                    p2p.peers.remove(host_port)
+                    p2p.peers.remove_from_memory(host_port)
                     continue
             elif len(p2p.core.user) == 0 and len(p2p.peers) == 0:
                 sleep(10)
@@ -385,7 +383,7 @@ def auto_stabilize_network(p2p: Peer2Peer):
 
             # peer list update (user)
             for user in p2p.core.user:
-                p2p.peers.add(user.get_host_port(), user.serialize())
+                p2p.peers.add(user)
 
             # update near info
             sample_user, item = p2p.send_command(cmd=Peer2PeerCmd.GET_NEARS)
@@ -429,7 +427,7 @@ def auto_stabilize_network(p2p: Peer2Peer):
                     log.debug(f"remove connection {score} {host_port}")
                 else:
                     log.debug("failed remove connection. Already disconnected?")
-                    if p2p.peers.remove(host_port):
+                    if p2p.peers.remove_from_memory(host_port):
                         del user_score[host_port]
 
             elif len(p2p.core.user) < p2p.core.listen * 2 // 3:  # Join
@@ -451,7 +449,7 @@ def auto_stabilize_network(p2p: Peer2Peer):
                 elif sticky_nodes.get(host_port, 0) > STICKY_LIMIT:
                     continue  # 接続不能回数大杉
                 elif host_port in ignore_peers:
-                    p2p.peers.remove(host_port)
+                    p2p.peers.remove_from_memory(host_port)
                     continue
                 elif host_port[0] in ban_address:
                     continue  # BAN address
@@ -460,7 +458,7 @@ def auto_stabilize_network(p2p: Peer2Peer):
                 else:
                     log.info(f"failed connect, remove {host_port}")
                     sticky_nodes[host_port] = sticky_nodes.get(host_port, 0) + 1
-                    if p2p.peers.remove(host_port):
+                    if p2p.peers.remove_from_memory(host_port):
                         del user_score[host_port]
             else:
                 # check connection alive by ping-pong

@@ -1,5 +1,5 @@
 from p2p_python.config import C, V, Debug, PeerToPeerError
-from p2p_python.user import User
+from p2p_python.user import UserHeader, User
 from p2p_python.serializer import dumps
 from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher
@@ -173,12 +173,11 @@ class Core(object):
             aeskey, header = data['aes-key'], data['header']
             # 6. generate new user
             with self.lock:
-                new_user = User(self.number, sock, host_port, aeskey, C.T_CLIENT)
-                new_user.deserialize(header)
+                new_user = User(UserHeader(**header), self.number, sock, host_port, aeskey, C.T_CLIENT)
                 # 7. check header
-                if new_user.network_ver != V.NETWORK_VER:
+                if new_user.header.network_ver != V.NETWORK_VER:
                     raise PeerToPeerError('Don\'t same network version [{}!={}]'.format(
-                        new_user.network_ver, V.NETWORK_VER))
+                        new_user.header.network_ver, V.NETWORK_VER))
                 self.number += 1
             # 8. send accept signal
             encrypted = AESCipher.encrypt(new_user.aeskey, b'accept')
@@ -186,8 +185,8 @@ class Core(object):
             self.traffic.put_traffic_up(encrypted)
 
             # 9. accept connection
-            log.info(f"New connection to {new_user.name} {new_user.get_host_port()}")
-            Thread(target=self.receive_loop, name='C:' + new_user.name, args=(new_user,), daemon=True).start()
+            log.info(f"New connection to {new_user.header.name} {new_user.get_host_port()}")
+            Thread(target=self.receive_loop, name='C:' + new_user.header.name, args=(new_user,), daemon=True).start()
 
             c = 20
             while new_user not in self.user and c > 0:
@@ -229,13 +228,13 @@ class Core(object):
         with self.lock:
             if user in self.user:
                 self.user.remove(user)
-                log.debug(f"remove connection to {user.name} by {reason}")
+                log.debug(f"remove connection to {user.header.name} by {reason}")
                 return True
             else:
-                log.debug(f"failed remove connection by {reason}, not found {user.name}")
+                log.debug(f"failed remove connection by {reason}, not found {user.header.name}")
                 return False
 
-    def send_msg_body(self, msg_body, user=None, status=200, f_udp=False, f_pro_force=False):
+    def send_msg_body(self, msg_body, user: Optional[User] = None, status=200, f_udp=False, f_pro_force=False):
         # StatusCode: https://ja.wikipedia.org/wiki/HTTPステータスコード
         assert isinstance(msg_body, bytes), 'msg_body is bytes'
         assert 200 <= status < 600, 'Not found status code {}'.format(status)
@@ -254,7 +253,7 @@ class Core(object):
         # send message
         if f_udp and f_pro_force:
             self._udp_body(msg_body, user)
-        elif f_udp and user.p2p_udp_accept and len(msg_body) < 1400:
+        elif f_udp and user.header.p2p_udp_accept and len(msg_body) < 1400:
             self._udp_body(msg_body, user)
         else:
             msg_body = zlib.compress(msg_body)
@@ -263,7 +262,6 @@ class Core(object):
             send_data = msg_len + msg_body
             user.send(send_data)
             self.traffic.put_traffic_up(send_data)
-        # log.debug("Send {}Kb to '{}'".format(len(msg_len+msg_body) / 1000, user.name))
         return user
 
     def _udp_body(self, msg_body, user):
@@ -294,10 +292,9 @@ class Core(object):
                 raise PeerToPeerError('json decode error on other\'s header receive')
             # 3. generate new user
             with self.lock:
-                new_user = User(self.number, sock, host_port, AESCipher.create_key(), C.T_SERVER)
+                new_user = User(UserHeader(**header), self.number, sock, host_port, AESCipher.create_key(), C.T_SERVER)
                 self.number += 1
-                new_user.deserialize(header)
-                if new_user.name == V.SERVER_NAME:
+                if new_user.header.name == V.SERVER_NAME:
                     raise ConnectionAbortedError('Same origin connection.')
             # 4. send my public key
             my_sec, my_pub = generate_keypair()
@@ -335,8 +332,8 @@ class Core(object):
                 raise ConnectionAbortedError('Not accept signal!')
 
             # 8. accept connection
-            log.info(f"New connection from {new_user.name} {new_user.get_host_port()}")
-            Thread(target=self.receive_loop, name='S:' + new_user.name, args=(new_user,), daemon=True).start()
+            log.info(f"New connection from {new_user.header.name} {new_user.get_host_port()}")
+            Thread(target=self.receive_loop, name='S:' + new_user.header.name, args=(new_user,), daemon=True).start()
             # Port accept check
             sleep(10)
             if new_user in self.user:
@@ -361,11 +358,11 @@ class Core(object):
         except OSError:
             pass
 
-    def receive_loop(self, user):
+    def receive_loop(self, user: User):
         # Accept connection
         with self.lock:
             for check_user in self.user:
-                if check_user.name != user.name:
+                if check_user.header.name != user.header.name:
                     continue
                 if self.ping(check_user):
                     error = "Remove new connection {}, continue connect {}".format(user, check_user)
@@ -376,7 +373,7 @@ class Core(object):
                     self.remove_connection(check_user, error)
                     log.info(error)
             self.user.append(user)
-        log.info(f"accept connection {user.name}")
+        log.info(f"accept connection {user}")
 
         try:
             user.sock.settimeout(10)
@@ -442,10 +439,10 @@ class Core(object):
                 msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                 msg_body = zlib.decompress(msg_body)
                 if msg_body == b'Ping':
-                    log.debug(f"receive Ping from {user.name}")
+                    log.debug(f"receive Ping from {user.header.name}")
                     self.send_msg_body(b'Pong', user)
                 elif msg_body == b'Pong':
-                    log.debug(f"receive Pong from {user.name}")
+                    log.debug(f"receive Pong from {user.header.name}")
                     self._ping.set()
                 else:
                     self.core_que.put((user, msg_body))
@@ -453,7 +450,7 @@ class Core(object):
 
             except socket.timeout:
                 if f_raise_timeout:
-                    error = "Timeout: Not allowed timeout when getting message!".format(user.name)
+                    error = "Timeout: Not allowed timeout when getting message!"
                     break
             except ConnectionError as e:
                 error = "ConnectionError: " + str(e)
@@ -470,9 +467,9 @@ class Core(object):
         if not bio.closed:
             bio.close()
         if not self.remove_connection(user, error):
-            log.debug(f"failed remove user {user.name}")
+            log.debug(f"failed remove user {user}")
 
-    def is_reachable(self, new_user):
+    def is_reachable(self, new_user: User):
         # Check connect to the user TCP/UDP port
         if new_user not in self.user:
             return
@@ -493,21 +490,20 @@ class Core(object):
         f_udp = self.ping(user=new_user, f_udp=True)
         f_changed = False
         # reflect user status
-        if f_tcp is not new_user.p2p_accept:
-            log.debug(f"{new_user} Update TCP accept status {new_user.p2p_accept}>{f_tcp}")
-            new_user.p2p_accept = f_tcp
+        if f_tcp is not new_user.header.p2p_accept:
+            log.debug(f"{new_user} Update TCP accept status {new_user.header.p2p_accept}>{f_tcp}")
+            new_user.header.p2p_accept = f_tcp
             f_changed = True
-        if f_udp is not new_user.p2p_udp_accept:
-            log.debug(f"{new_user} Update UDP accept status {new_user.p2p_udp_accept}>{f_udp}")
-            new_user.p2p_udp_accept = f_udp
+        if f_udp is not new_user.header.p2p_udp_accept:
+            log.debug(f"{new_user} Update UDP accept status {new_user.header.p2p_udp_accept}>{f_udp}")
+            new_user.header.p2p_udp_accept = f_udp
             f_changed = True
-        # if f_changed:
-        #    log.info("{} Change TCP/UDP accept status tcp={} udp={}"
-        #                 .format(new_user, f_tcp, f_udp))
+        if f_changed:
+            log.debug(f"{new_user} Change socket status tcp={f_tcp} udp={f_udp}")
 
     def name2user(self, name) -> Optional[User]:
         for user in self.user:
-            if user.name == name:
+            if user.header.name == name:
                 return user
         return None
 
