@@ -3,7 +3,8 @@ from p2p_python.user import UserHeader, User
 from p2p_python.serializer import dumps
 from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher
-from nem_ed25519_rust import generate_keypair, encrypt, decrypt
+from ecdsa.keys import SigningKey, VerifyingKey
+from ecdsa.curves import NIST256p
 from threading import Thread, current_thread, RLock, Event
 from typing import Optional, List
 from logging import getLogger
@@ -11,6 +12,7 @@ from binascii import a2b_hex
 from time import time, sleep
 from queue import Queue
 from io import BytesIO
+from hashlib import sha256
 import selectors
 import json
 import random
@@ -154,17 +156,16 @@ class Core(object):
                 raise PeerToPeerError('timeout on public key receive')
             except json.JSONDecodeError:
                 raise PeerToPeerError('json decode error on public key receive')
-            other_pk = msg['public-key']
-            other_pub = a2b_hex(other_pk)
             # 4. send public key
-            send = json.dumps({'public-key': my_pub.hex()}).encode()
+            send = json.dumps({'public-key': my_pub}).encode()
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 5. Get AES key and header and decrypt
             try:
                 receive = sock.recv(self.buffsize)
                 self.traffic.put_traffic_down(receive)
-                dec = decrypt(my_sec, other_pub, receive)
+                key = generate_shared_key(my_sec, msg['public-key'])
+                dec = AESCipher.decrypt(key, receive)
                 data = json.loads(dec.decode())
             except socket.timeout:
                 raise PeerToPeerError('timeout on AES key and header receive')
@@ -298,7 +299,7 @@ class Core(object):
                     raise ConnectionAbortedError('Same origin connection.')
             # 4. send my public key
             my_sec, my_pub = generate_keypair()
-            send = json.dumps({'public-key': my_pub.hex()}).encode()
+            send = json.dumps({'public-key': my_pub}).encode()
             sock.sendall(send)
             self.traffic.put_traffic_up(send)
             # 5. receive public key
@@ -312,13 +313,13 @@ class Core(object):
                 raise PeerToPeerError('timeout on public key receive')
             except json.JSONDecodeError:
                 raise PeerToPeerError('json decode error on public key receive')
-            other_pub = a2b_hex(data['public-key'])
             # 6. encrypt and send AES key and header
             send = json.dumps({
                 'aes-key': new_user.aeskey,
                 'header': self.get_server_header(),
             })
-            encrypted = encrypt(my_sec, other_pub, send.encode())
+            key = generate_shared_key(my_sec, data['public-key'])
+            encrypted = AESCipher.encrypt(key, send.encode())
             sock.send(encrypted)
             self.traffic.put_traffic_up(encrypted)
             # 7. receive accept signal
@@ -512,6 +513,22 @@ class Core(object):
             if host_port == user.get_host_port():
                 return user
         return None
+
+
+"""ECDH functions
+"""
+
+
+def generate_shared_key(sk, vk_str) -> bytes:
+    vk = VerifyingKey.from_string(a2b_hex(vk_str), NIST256p)
+    point = sk.privkey.secret_multiplier * vk.pubkey.point
+    return sha256(point.x().to_bytes(32, 'big')).digest()
+
+
+def generate_keypair() -> (SigningKey, str):
+    sk = SigningKey.generate(NIST256p)
+    vk = sk.get_verifying_key()
+    return sk, vk.to_string().hex()
 
 
 """socket connection functions

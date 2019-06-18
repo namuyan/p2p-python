@@ -57,7 +57,8 @@ class AESCipher:
     @staticmethod
     def encrypt(key, raw):
         assert type(raw) == bytes, "input data is bytes"
-        key = b64decode(key.encode())
+        if isinstance(key, str):
+            key = b64decode(key.encode())
         raw = pad(raw, AES.block_size)
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(key, AES.MODE_CBC, iv)
@@ -66,7 +67,8 @@ class AESCipher:
     @staticmethod
     def decrypt(key, enc):
         assert type(enc) == bytes, 'Encrypt data is bytes'
-        key = b64decode(key.encode())
+        if isinstance(key, str):
+            key = b64decode(key.encode())
         iv = enc[:AES.block_size]
         cipher = AES.new(key, AES.MODE_CBC, iv)
         raw = cipher.decrypt(enc[AES.block_size:])

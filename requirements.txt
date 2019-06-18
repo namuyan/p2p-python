@@ -3,5 +3,5 @@ pycryptodomex
 xmltodict
 requests
 pysocks
-nem-ed25519-rust
+ecdsa>=0.13
 msgpack>=0.5.6
