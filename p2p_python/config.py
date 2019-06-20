@@ -18,7 +18,6 @@ class V:
 
 
 class Debug:
-    P_MAX_RECEIVE_SIZE = 50 * 1000 * 1000  # 一度に受け取れる最大データ量(50MBytes)
     P_PRINT_EXCEPTION = False  # print exception info
     P_SEND_RECEIVE_DETAIL = False  # print receive msg info
     F_RECODE_TRAFFIC = False  # recode traffic to file

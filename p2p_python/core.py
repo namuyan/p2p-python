@@ -240,15 +240,11 @@ class Core(object):
         assert isinstance(msg_body, bytes), 'msg_body is bytes'
         assert 200 <= status < 600, 'Not found status code {}'.format(status)
 
-        # get client
+        # check user existence
         if len(self.user) == 0:
-            raise ConnectionError('client connection is zero.')
-        elif len(msg_body) > Debug.P_MAX_RECEIVE_SIZE + 5000:
-            error = 'Max message size is {}kb (You try {}Kb)'.format(
-                round(Debug.P_MAX_RECEIVE_SIZE / 1000000, 3), round(len(msg_body) / 1000000, 3))
-            await self.send_msg_body(msg_body=dumps(error), user=user, status=500)
-            raise ConnectionRefusedError(error)
-        elif user is None:
+            raise PeerToPeerError('there is no user connection')
+        # select random user
+        if user is None:
             user = random.choice(self.user)
 
         # send message
