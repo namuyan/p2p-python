@@ -21,16 +21,20 @@ class EventIgnition(object):
     def __init__(self):
         self.event = dict()
 
-    def add_event(self, cmd, f, post_f=None):
-        assert f.__code__.co_argcount == 2
-        assert post_f and post_f.__code__.co_argcount == 2
+    def add_event(self, cmd, fnc, post_fnc=None):
+        assert fnc.__code__.co_argcount == 2
+        if post_fnc:
+            assert post_fnc.__code__.co_argcount == 2
         if cmd in self.event:
             raise Exception('already registered cmd')
-        self.event[cmd] = (f, post_f)
+        self.event[cmd] = (fnc, post_fnc)
 
     def remove_event(self, cmd):
         if cmd in self.event:
             del self.event[cmd]
+
+    def have_event(self, cmd):
+        return cmd in self.event
 
     async def ignition(self, user, cmd, data):
         if cmd in self.event:

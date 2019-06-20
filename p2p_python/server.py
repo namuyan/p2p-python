@@ -186,13 +186,13 @@ class Peer2Peer(object):
             allows.append(user)
 
         elif item['cmd'] == Peer2PeerCmd.DIRECT_CMD:
+            data = item['data']
 
             async def direct_cmd():
-                data = item['data']
                 temperate['data'] = await self.event.ignition(user, data['cmd'], data['data'])
                 await self._send_many_users(item=temperate, allows=[user], denys=[])
 
-            if 'cmd' in item['data'] and item['data']['cmd'] in self.event:
+            if 'cmd' in data and self.event.have_event(data['cmd']):
                 asyncio.ensure_future(direct_cmd())
         else:
             pass
@@ -244,9 +244,9 @@ class Peer2Peer(object):
                     log.debug(f"failed send msg to {user} by {str(e)}")
         return count
 
-    async def send_command(self, cmd, data=None, uuid=None, user=None, timeout=10.0) -> (User, dict):
+    async def send_command(self, cmd, data=None, user=None, timeout=10.0) -> (User, dict):
         assert 0 < timeout
-        uuid = uuid if uuid else random.randint(10, 0xffffffff)
+        uuid = random.randint(10, 0xffffffff)
         # 1. Make template
         temperate = {
             'type': T_REQUEST,
@@ -308,9 +308,8 @@ class Peer2Peer(object):
         if len(self.core.user) == 0:
             raise PeerToPeerError('not found peers')
         user = user if user else random.choice(self.core.user)
-        uuid = random.randint(100, 0xffffffff)
-        send_data = {'cmd': cmd, 'data': data, 'uuid': uuid}
-        receive_user, item = await self.send_command(Peer2PeerCmd.DIRECT_CMD, send_data, uuid, user)
+        send_data = {'cmd': cmd, 'data': data}
+        receive_user, item = await self.send_command(Peer2PeerCmd.DIRECT_CMD, send_data, user)
         if user != receive_user:
             log.warning(f"do not match sender and receiver {user} != {receive_user}")
         return user, item
