@@ -3,6 +3,7 @@ from p2p_python.user import UserHeader, User
 from logging import getLogger
 from typing import Dict, Optional
 from time import time
+import asyncio
 import os
 
 # For AES
@@ -11,32 +12,40 @@ from Cryptodome.Util.Padding import pad, unpad
 from Cryptodome import Random
 from base64 import b64encode, b64decode
 
+loop = asyncio.get_event_loop()
 log = getLogger(__name__)
 
 
-class EventIgnition:
+class EventIgnition(object):
 
     def __init__(self):
         self.event = dict()
 
-    def addevent(self, cmd, f, post_f=None):
+    def add_event(self, cmd, f, post_f=None):
+        assert f.__code__.co_argcount == 2
+        assert post_f and post_f.__code__.co_argcount == 2
+        if cmd in self.event:
+            raise Exception('already registered cmd')
         self.event[cmd] = (f, post_f)
 
-    def removevent(self, cmd):
+    def remove_event(self, cmd):
         if cmd in self.event:
             del self.event[cmd]
 
-    def __contains__(self, item):
-        return item in self.event
-
-    def work(self, cmd, data):
+    async def ignition(self, user, cmd, data):
         if cmd in self.event:
-            f, post_f = self.event[cmd]
-            r = f(data)
-            if post_f:
-                return post_f(r)
+            fnc, post_fnc = self.event[cmd]
+            if asyncio.iscoroutinefunction(fnc):
+                result = await fnc(user, data)
             else:
-                return r
+                result = fnc(user, data)
+            if post_fnc:
+                if asyncio.iscoroutinefunction(post_fnc):
+                    return await post_fnc(user, result)
+                else:
+                    return post_fnc(user, result)
+            else:
+                return result
         else:
             raise KeyError('Not found cmd "{}"'.format(cmd))
 

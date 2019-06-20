@@ -1,6 +1,11 @@
-from threading import Lock
+from asyncio.streams import StreamReader, StreamWriter
+from logging import getLogger
 from time import time
 from typing import Dict
+import asyncio
+
+
+log = getLogger(__name__)
 
 
 class UserHeader(object):
@@ -49,20 +54,22 @@ class User(object):
     __slots__ = (
         "header",  # (UserHeader)
         "number",  # (int) unique number assigned to each User object
-        "sock",  # (socket) TCP socket object
+        "_reader",  # (StreamReader) TCP socket reader
+        "_writer",  # (StreamWriter) TCP socket writer
         "host_port",  # ([str, int])  Interface used on our PC
         "aeskey",  # (str) Common key
         "sock_type",  # (str) We are as server or client side
         "neers",  # ({host_port: header})  Neer clients info
         "score",  # (int )User score
         "warn",  # (int) User warning score
-        "_lock",  # (Lock) socket lock object
+        "write_lock",  # (Lock) socket lock object
     )
 
-    def __init__(self, header, number, sock, host_port, aeskey, sock_type):
+    def __init__(self, header, number, reader, writer, host_port, aeskey, sock_type):
         self.header: UserHeader = header
         self.number = number
-        self.sock = sock
+        self._reader: StreamReader = reader
+        self._writer: StreamWriter = writer
         self.host_port = host_port
         self.aeskey = aeskey
         self.sock_type = sock_type
@@ -70,46 +77,54 @@ class User(object):
         # user experience
         self.score = 0
         self.warn = 0
-        self._lock = Lock()
+        self.write_lock = asyncio.Lock()
 
     def __repr__(self):
         age = int(time()) - self.header.start_time
-        return f"<User {self.header.name} {age//60}m {self.get_host_port()} {self.score}/{self.warn}>"
+        host_port = self.host_port[0] + ":" + str(self.header.p2p_port)
+        status = 'closed' if self.closed else 'open'
+        return f"<User {self.header.name} {status} {age//60}m {host_port} {self.score}/{self.warn}>"
 
     def __del__(self):
         self.close()
 
-    def close(self):
-        try:
-            self.sock.close()
-        except Exception:
-            pass
+    @property
+    def closed(self):
+        return self._writer.transport.is_closing()
 
-    def send(self, msg):
-        with self._lock:
-            self.sock.sendall(msg)
+    def close(self):
+        if not self.closed:
+            self._writer.close()
+
+    async def send(self, msg):
+        async with self.write_lock:
+            self._writer.write(msg)
+            await self._writer.drain()
+
+    async def recv(self, timeout=5.0):
+        return await asyncio.wait_for(self._reader.read(8192), timeout)
 
     def getinfo(self):
         return {
             'header': self.header.getinfo(),
             'neers': {"{}:{}".format(*host_port): header.getinfo() for host_port, header in self.neers.items()},
             'number': self.number,
-            'sock': str(self.sock),
-            'host_port': self.host_port,
-            'aeskey': self.aeskey,
+            'host_port': self.get_host_port(),
             'sock_type': self.sock_type,
             'score': self.score,
             'warn': self.warn,
         }
 
-    def get_host_port(self) -> (str, int):
+    def get_host_port(self) -> tuple:
         # connection先
-        return self.host_port[0], self.header.p2p_port
+        host_port = list(self.host_port)
+        host_port[1] = self.header.p2p_port
+        return tuple(host_port)
 
     def update_neers(self, items):
         # [[(host,port), header],..]
         for host_port, header in items:
-            self.neers[tuple(host_port)] = header
+            self.neers[tuple(host_port)] = UserHeader(**header)
 
 
 __all__ = [

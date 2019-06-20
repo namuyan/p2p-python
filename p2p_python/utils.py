@@ -23,7 +23,7 @@ NAMES = (
 
 def get_version():
     """get program version string"""
-    if Debug.P_EXCEPTION:
+    if Debug.P_PRINT_EXCEPTION:
         return 'debug'
     hear = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(hear, '__init__.py'), mode='r') as fp:
@@ -42,8 +42,8 @@ def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, p2p_udp_accept=True
                      f_debug=False):
     """ setup general connection setting """
     if f_debug:
-        Debug.P_EXCEPTION = True
-        Debug.P_RECEIVE_MSG_INFO = True
+        Debug.P_PRINT_EXCEPTION = True
+        Debug.P_SEND_RECEIVE_DETAIL = True
         Debug.F_LONG_MSG_INFO = True
     # directory params
     if V.DATA_PATH is not None:

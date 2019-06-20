@@ -1,39 +1,40 @@
-import collections
-from threading import Thread
-import time
-import os.path
 from logging import getLogger
+import collections
+import os.path
+import asyncio
+import time
 
+loop = asyncio.get_event_loop()
 log = getLogger(__name__)
 
 
-class Traffic(Thread):
+class Traffic(object):
     f_stop = False
     f_finish = False
 
     def __init__(self, recode_dir=None, span=300, max_hours=24):
-        super().__init__(name='Traffic', daemon=True)
         self.data = collections.deque(maxlen=int(3600 * max_hours // span))
         self.recode_dir = recode_dir if recode_dir and os.path.exists(recode_dir) else None
         self.span = span  # 5min
         self.traffic_up = list()
         self.traffic_down = list()
+        asyncio.ensure_future(self.loop())
 
     def close(self):
         self.f_stop = True
-        log.debug("traffic close")
+        log.debug("traffic recoder close")
 
-    def run(self):
+    async def loop(self):
         count = 0
-        while True:
-            time.sleep(self.span)
+        while not self.f_stop:
+            await asyncio.sleep(self.span)
             if self.f_stop:
                 break
             count += 1
-            time_, up, down = int(time.time()), sum(self.traffic_up), sum(self.traffic_down)
-            self.data.append((time_, up, down))
-            self.traffic_up = list()
-            self.traffic_down = list()
+            ntime, up, down = int(time.time()), sum(self.traffic_up), sum(self.traffic_down)
+            self.data.append((ntime, up, down))
+            self.traffic_up.clear()
+            self.traffic_down.clear()
             # recode
             if self.recode_dir is None:
                 continue
@@ -44,7 +45,7 @@ class Traffic(Thread):
                 with open(recode_path, mode='a') as f:
                     if not f_first:
                         f.write("unix time,date,up (kb),down (kb)\n")
-                    f.write("{},{},{},{}\n".format(time_, time.strftime('%Hh%Mm', time.gmtime(time_)),
+                    f.write("{},{},{},{}\n".format(ntime, time.strftime('%Hh%Mm', time.gmtime(ntime)),
                                                    round(up / 1000, 3), round(down / 1000, 3)))
             except Exception as e:
                 log.debug(e)
