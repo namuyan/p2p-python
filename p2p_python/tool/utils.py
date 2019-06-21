@@ -21,13 +21,20 @@ class EventIgnition(object):
     def __init__(self):
         self.event = dict()
 
-    def add_event(self, cmd, fnc, post_fnc=None):
+    def setup_events_from_class(self, klass):
+        for cmd, fnc in klass.__dict__.items():
+            if cmd.startswith('_'):
+                continue
+            if isinstance(fnc, staticmethod):
+                fnc = fnc.__func__
+            self.add_event(cmd, fnc)
+
+    def add_event(self, cmd, fnc):
         assert fnc.__code__.co_argcount == 2
-        if post_fnc:
-            assert post_fnc.__code__.co_argcount == 2
         if cmd in self.event:
             raise Exception('already registered cmd')
-        self.event[cmd] = (fnc, post_fnc)
+        self.event[cmd] = fnc
+        log.info(f"add DirectCmd event '{cmd}'")
 
     def remove_event(self, cmd):
         if cmd in self.event:
@@ -38,18 +45,11 @@ class EventIgnition(object):
 
     async def ignition(self, user, cmd, data):
         if cmd in self.event:
-            fnc, post_fnc = self.event[cmd]
+            fnc = self.event[cmd]
             if asyncio.iscoroutinefunction(fnc):
-                result = await fnc(user, data)
+                return await fnc(user, data)
             else:
-                result = fnc(user, data)
-            if post_fnc:
-                if asyncio.iscoroutinefunction(post_fnc):
-                    return await post_fnc(user, result)
-                else:
-                    return post_fnc(user, result)
-            else:
-                return result
+                return fnc(user, data)
         else:
             raise KeyError('Not found cmd "{}"'.format(cmd))
 

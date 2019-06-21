@@ -56,7 +56,7 @@ class Peer2Peer(object):
         self.peers = PeerData(os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
-            self.core.traffic.recode_dir = V.TMP_PATH
+            self.core.traffic.recode_dir = V.DATA_PATH
         # serializer/deserializer function
         self.default_hook = default_hook
         self.object_hook = object_hook
@@ -307,6 +307,9 @@ class Peer2Peer(object):
     async def send_direct_cmd(self, cmd, data, user=None) -> (User, dict):
         if len(self.core.user) == 0:
             raise PeerToPeerError('not found peers')
+        if callable(cmd):
+            cmd = cmd.__name__
+        assert isinstance(cmd, str)
         user = user if user else random.choice(self.core.user)
         send_data = {'cmd': cmd, 'data': data}
         receive_user, item = await self.send_command(Peer2PeerCmd.DIRECT_CMD, send_data, user)

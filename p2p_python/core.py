@@ -98,7 +98,8 @@ class Core(object):
                  f"tcp{len(tcp_servers)}={V.P2P_ACCEPT} udp{len(udp_servers)}={V.P2P_UDP_ACCEPT}")
         self.f_running = True
 
-    def get_server_header(self):
+    def get_my_user_header(self):
+        """return my UserHeader format dict"""
         return {
             'name': V.SERVER_NAME,
             'client_ver': V.CLIENT_VER,
@@ -107,7 +108,7 @@ class Core(object):
             'p2p_udp_accept': V.P2P_UDP_ACCEPT,
             'p2p_port': V.P2P_PORT,
             'start_time': self.start_time,
-            'last_seen': int(time())
+            'last_seen': int(time()),
         }
 
     async def create_connection(self, host, port):
@@ -148,7 +149,7 @@ class Core(object):
                 raise PeerToPeerError('timeout on first plain msg receive')
 
             # 2. send my header
-            send = json.dumps(self.get_server_header()).encode()
+            send = json.dumps(self.get_my_user_header()).encode()
             writer.write(send)
             await writer.drain()
             self.traffic.put_traffic_up(send)
@@ -318,7 +319,7 @@ class Core(object):
             # 6. encrypt and send AES key and header
             send = json.dumps({
                 'aes-key': new_user.aeskey,
-                'header': self.get_server_header(),
+                'header': self.get_my_user_header(),
             })
             key = generate_shared_key(my_sec, data['public-key'])
             encrypted = AESCipher.encrypt(key, send.encode())
