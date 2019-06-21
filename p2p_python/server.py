@@ -56,7 +56,7 @@ class Peer2Peer(object):
         self.peers = PeerData(os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
-            self.core.traffic.recode_dir = V.TMP_PATH
+            self.core.traffic.recode_dir = V.DATA_PATH
         # serializer/deserializer function
         self.default_hook = default_hook
         self.object_hook = object_hook

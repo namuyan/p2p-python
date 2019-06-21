@@ -1,8 +1,8 @@
-import socket
-import os
-import random
-from tempfile import gettempdir
 from p2p_python.config import V, Debug
+import logging
+import socket
+import random
+import os
 
 
 NAMES = (
@@ -38,30 +38,22 @@ def get_name():
     return "{}:{}".format(random.choice(NAMES), random.randint(10000, 99999))
 
 
-def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, p2p_udp_accept=True, sub_dir=None,
-                     f_debug=False):
+def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, p2p_udp_accept=True, sub_dir=None):
     """ setup general connection setting """
-    if f_debug:
-        Debug.P_PRINT_EXCEPTION = True
-        Debug.P_SEND_RECEIVE_DETAIL = True
-        Debug.F_LONG_MSG_INFO = True
     # directory params
     if V.DATA_PATH is not None:
         raise Exception('Already setup params.')
-    V.DATA_PATH = os.path.join(os.path.expanduser('~'), 'p2p-python')
-    V.TMP_PATH = os.path.join(gettempdir(), 'p2p-python')
+    root_data_dir = os.path.join(os.path.expanduser('~'), 'p2p-python')
+    if not os.path.exists(root_data_dir):
+        os.makedirs(root_data_dir)
+    V.DATA_PATH = os.path.join(root_data_dir, str(p2p_port))
     if not os.path.exists(V.DATA_PATH):
         os.makedirs(V.DATA_PATH)
-    if not os.path.exists(V.TMP_PATH):
-        os.makedirs(V.TMP_PATH)
     if sub_dir:
         V.DATA_PATH = os.path.join(V.DATA_PATH, sub_dir)
-        V.TMP_PATH = os.path.join(V.TMP_PATH, sub_dir)
-    if not os.path.exists(V.DATA_PATH):
-        os.makedirs(V.DATA_PATH)
-    if not os.path.exists(V.TMP_PATH):
-        os.makedirs(V.TMP_PATH)
-    # Network params
+        if not os.path.exists(V.DATA_PATH):
+            os.makedirs(V.DATA_PATH)
+    # network params
     V.CLIENT_VER = get_version()
     V.SERVER_NAME = get_name()
     V.NETWORK_VER = network_ver
@@ -104,10 +96,17 @@ def is_reachable(host, port):
         return False
 
 
-def trim_msg(item, num):
-    """limit a message"""
-    str_item = str(item)
-    return str_item[:num] + ('...' if len(str_item) > num else '')
+def setup_logger(level=logging.DEBUG, format_str='[%(levelname)-6s] [%(threadName)-10s] [%(asctime)-24s] %(message)s'):
+    """setup basic logging handler"""
+    logger = logging.getLogger()
+    for sh in logger.handlers:
+        logger.removeHandler(sh)
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(format_str)
+    sh = logging.StreamHandler()
+    sh.setLevel(level)
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
 
 
 __all__ = [
@@ -117,5 +116,5 @@ __all__ = [
     "is_reachable",
     "setup_tor_connection",
     "setup_p2p_params",
-    "trim_msg",
+    "setup_logger",
 ]

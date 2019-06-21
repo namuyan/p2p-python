@@ -3,7 +3,6 @@
 class V:
     # path
     DATA_PATH = None
-    TMP_PATH = None
 
     # info
     CLIENT_VER = None
@@ -21,8 +20,6 @@ class Debug:
     P_PRINT_EXCEPTION = False  # print exception info
     P_SEND_RECEIVE_DETAIL = False  # print receive msg info
     F_RECODE_TRAFFIC = False  # recode traffic to file
-    F_SEND_CHANNEL_INFO = False  # send to details with channel fnc
-    F_LONG_MSG_INFO = False  # long message info
 
 
 class PeerToPeerError(Exception):
