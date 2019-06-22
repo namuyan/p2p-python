@@ -112,6 +112,7 @@ class Peer2Peer(object):
             self.f_running = False
             log.info("close inner_loop process")
 
+        assert not loop.is_running(), "setup before event loop start!"
         self.core.start(s_family=s_family)
         if f_stabilize:
             loop_futures.append(asyncio.ensure_future(auto_stabilize_network(self)))
