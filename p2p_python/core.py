@@ -563,20 +563,20 @@ async def udp_server_handle(msg, addr, core: Core):
         log.debug("UDP handle exception", exc_info=Debug.P_PRINT_EXCEPTION)
 
 
-def create_tcp_server(core: Core, family):
+def create_tcp_server(core: Core, family, host_port):
     assert family == socket.AF_INET or family == socket.AF_INET6
     coroutine = asyncio.start_server(
-        core.initial_connection_check, core.host, V.P2P_PORT,
+        core.initial_connection_check, host_port[0], host_port[1],
         family=family, backlog=core.backlog, loop=loop)
     return loop.run_until_complete(coroutine)
 
 
-def create_udp_server(core: Core, family):
+def create_udp_server(core: Core, family, host_port):
     assert family == socket.AF_INET or family == socket.AF_INET6
     sock = socket.socket(family, socket.SOCK_DGRAM, 0)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setblocking(False)
-    sock.bind((core.host, V.P2P_PORT))
+    sock.bind(host_port)
     fd = sock.fileno()
 
     def listen():
@@ -600,7 +600,7 @@ def setup_all_socket_server(core: Core, s_family):
         for res in socket.getaddrinfo(core.host, V.P2P_PORT, s_family, socket.SOCK_STREAM, 0, socket.AI_PASSIVE):
             af, sock_type, proto, canon_name, sa = res
             try:
-                sock = create_tcp_server(core, af)
+                sock = create_tcp_server(core, af, sa)
                 log.debug(f"success tcp server creation af={socket2name.get(af)}")
                 tcp_servers.append(sock)
                 V.P2P_ACCEPT = True
@@ -612,7 +612,7 @@ def setup_all_socket_server(core: Core, s_family):
         for res in socket.getaddrinfo(core.host, V.P2P_PORT, s_family, socket.SOCK_DGRAM, 0, socket.AI_PASSIVE):
             af, sock_type, proto, canon_name, sa = res
             try:
-                sock = create_udp_server(core, af)
+                sock = create_udp_server(core, af, sa)
                 log.debug(f"success udp server creation af={socket2name.get(af)}")
                 udp_servers.append(sock)
                 V.P2P_UDP_ACCEPT = True
