@@ -131,6 +131,8 @@ class Core(object):
                 sock.setblocking(False)
                 reader, writer = await asyncio.open_connection(sock=sock, loop=loop)
                 break
+            except asyncio.TimeoutError:
+                continue  # try to connect but do not reach
             except ConnectionRefusedError:
                 continue  # try to connect closed socket
             except OSError as e:
