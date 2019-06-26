@@ -2,7 +2,11 @@ from p2p_python.config import V, Debug
 import logging
 import socket
 import random
+import asyncio
 import os
+
+
+loop = asyncio.get_event_loop()
 
 
 NAMES = (
@@ -79,7 +83,7 @@ def setup_tor_connection(proxy_host='127.0.0.1', port=9150, f_raise_error=True):
     sock.close()
 
 
-def is_reachable(host, port):
+async def is_reachable(host, port):
     """check a port is opened"""
     for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
         af, socktype, proto, canonname, host_port = res
@@ -87,7 +91,10 @@ def is_reachable(host, port):
             sock = socket.socket(af, socktype, proto)
         except OSError:
             continue
-        result = sock.connect_ex(host_port)
+        sock.settimeout(5.0)
+        future = loop.run_in_executor(None, sock.connect_ex, host_port)
+        await asyncio.wait_for(future, 20.0)
+        result = future.result()
         sock.close()
         if result == 0:
             return True

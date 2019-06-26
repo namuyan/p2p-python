@@ -125,7 +125,9 @@ class Core(object):
                 else:
                     sock = socket.socket(af, socktype, proto)
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.connect(host_port)
+                future = loop.run_in_executor(None, sock.connect, host_port)
+                await asyncio.wait_for(future, 10.0)
+                future.result()  # raised exception of socket
                 sock.setblocking(False)
                 reader, writer = await asyncio.open_connection(sock=sock, loop=loop)
                 break
@@ -483,9 +485,12 @@ class Core(object):
             host_port = new_user.get_host_port()
             af = socket.AF_INET if len(host_port) == 2 else socket.AF_INET6
             sock = socket.socket(af, socket.SOCK_STREAM)
+            sock.settimeout(5.0)
             try:
-                r = sock.connect_ex(host_port)
-                if r != 0:
+                future = loop.run_in_executor(None, sock.connect_ex, host_port)
+                await asyncio.wait_for(future, 60.0)
+                result = future.result()
+                if result != 0:
                     f_tcp = False
                 sock.close()
             except OSError:

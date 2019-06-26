@@ -183,7 +183,7 @@ class Peer2Peer(object):
                 port = item['data']['port']
             except Exception as e:
                 port = user.header.p2p_port
-            temperate['data'] = is_reachable(host=user.host_port[0], port=port)
+            temperate['data'] = await is_reachable(host=user.host_port[0], port=port)
             allows.append(user)
 
         elif item['cmd'] == Peer2PeerCmd.DIRECT_CMD:
