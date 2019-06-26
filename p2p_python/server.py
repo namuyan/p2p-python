@@ -90,7 +90,7 @@ class Peer2Peer(object):
                     elif item['type'] == T_REQUEST:
                         if item['cmd'] == Peer2PeerCmd.BROADCAST:
                             # process broadcast cmd one by one
-                            await broadcast_que.put((user, item))
+                            await broadcast_que.put((user, item, time()))
                         else:
                             await self.type_request(user, item)
                     elif item['type'] == T_RESPONSE:
@@ -113,11 +113,17 @@ class Peer2Peer(object):
             log.info("start broadcast_loop")
             while not self.f_stop:
                 try:
-                    user, item = await asyncio.wait_for(broadcast_que.get(), 1.0)
+                    user, item, ntime = await asyncio.wait_for(broadcast_que.get(), 1.0)
                 except asyncio.TimeoutError:
                     continue
                 try:
-                    await asyncio.wait_for(self.type_request(user, item), 10.0)
+                    if time() - ntime < 5.0:
+                        await asyncio.wait_for(self.type_request(user, item), 10.0)
+                    else:
+                        log.warning(f"try to process broadcast but too late, {int(time()-ntime)}s")
+                except asyncio.TimeoutError:
+                    log.info(f"broadcast relay failed from {user}")
+                    user.warn += 1
                 except Exception:
                     log.warning('broadcast_loop exception', exc_info=True)
             log.info("close broadcast_loop")
@@ -296,16 +302,19 @@ class Peer2Peer(object):
             receive_user, item = future.result()
             receive_user.warn = 0
             return receive_user, item
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, asyncio.CancelledError):
             # timeout set CancelledError exception to future
             # do not care future
-            if user:
-                if 3 < user.warn:
-                    await self.try_reconnect(user, reason="too many warn point")
-                else:
-                    user.warn += 1
-            log.debug(f"timeout on sending cmd({cmd}) to {user}, id={uuid}")
-        raise asyncio.TimeoutError(f"timeout cmd")
+            pass
+        except Exception:
+            log.debug("send_command exception", exc_info=True)
+        if user:
+            if 3 < user.warn:
+                await self.try_reconnect(user, reason="too many warn point")
+            else:
+                user.warn += 1
+        log.debug(f"timeout on sending cmd({cmd}) to {user}, id={uuid}")
+        raise asyncio.TimeoutError("timeout cmd")
 
     async def try_reconnect(self, user, reason):
         self.core.remove_connection(user, reason)
