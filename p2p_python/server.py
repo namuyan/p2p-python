@@ -297,10 +297,8 @@ class Peer2Peer(object):
             receive_user.warn = 0
             return receive_user, item
         except asyncio.TimeoutError:
-            try:
-                future.set_result(None)
-            except asyncio.InvalidStateError:
-                log.error(f"already set result? death lock occurred! => {future.result()}")
+            # timeout set CancelledError exception to future
+            # do not care future
             if user:
                 if 3 < user.warn:
                     await self.try_reconnect(user, reason="too many warn point")
