@@ -66,9 +66,10 @@ class Peer2Peer(object):
         self.core.close()
 
     def setup(self, s_family=socket.AF_UNSPEC, f_stabilize=True):
+        broadcast_que = asyncio.Queue()
+
         async def inner_loop():
             user: Optional[User] = None
-            broadcast_task: Optional[asyncio.Future] = None
             log.info("start P2P inner loop")
             while not self.f_stop:
                 try:
@@ -88,12 +89,8 @@ class Peer2Peer(object):
                         log.debug("unrecognized message receive")
                     elif item['type'] == T_REQUEST:
                         if item['cmd'] == Peer2PeerCmd.BROADCAST:
-                            # broadcast cmd is another thread
-                            if broadcast_task:
-                                if not broadcast_task.done():
-                                    await asyncio.wait_for(broadcast_task, 10.0)
-                            # overwrite new task
-                            broadcast_task = asyncio.ensure_future(self.type_request(user, item))
+                            # process broadcast cmd one by one
+                            await broadcast_que.put((user, item))
                         else:
                             await self.type_request(user, item)
                     elif item['type'] == T_RESPONSE:
@@ -112,12 +109,26 @@ class Peer2Peer(object):
             self.f_running = False
             log.info("close inner_loop process")
 
+        async def broadcast_loop():
+            log.info("start broadcast_loop")
+            while not self.f_stop:
+                try:
+                    user, item = await asyncio.wait_for(broadcast_que.get(), 1.0)
+                except asyncio.TimeoutError:
+                    continue
+                try:
+                    await asyncio.wait_for(self.type_request(user, item), 10.0)
+                except Exception:
+                    log.warning('broadcast_loop exception', exc_info=True)
+            log.info("close broadcast_loop")
+
         assert not loop.is_running(), "setup before event loop start!"
         self.core.start(s_family=s_family)
         if f_stabilize:
             loop_futures.append(asyncio.ensure_future(auto_stabilize_network(self)))
         # Processing
         loop_futures.append(asyncio.ensure_future(inner_loop()))
+        loop_futures.append(asyncio.ensure_future(broadcast_loop()))
         log.info(f"start user, name={V.SERVER_NAME} port={V.P2P_PORT}")
         self.f_running = True
 
@@ -286,7 +297,10 @@ class Peer2Peer(object):
             receive_user.warn = 0
             return receive_user, item
         except asyncio.TimeoutError:
-            future.set_result(None)
+            try:
+                future.set_result(None)
+            except asyncio.InvalidStateError:
+                log.error(f"already set result? death lock occurred! => {future.result()}")
             if user:
                 if 3 < user.warn:
                     await self.try_reconnect(user, reason="too many warn point")
