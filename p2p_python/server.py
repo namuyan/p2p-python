@@ -105,7 +105,7 @@ class Peer2Peer(object):
                         log.debug(f"unknown type={item['type']}")
                 except asyncio.TimeoutError:
                     log.warning(f"timeout on broadcast and cancel task")
-                    broadcast_task.cancel()
+                    broadcast_task = None
                 except Exception:
                     log.debug(f"core que processing exception of {user}", exc_info=True)
             self.f_finish = True
@@ -286,7 +286,7 @@ class Peer2Peer(object):
             receive_user.warn = 0
             return receive_user, item
         except asyncio.TimeoutError:
-            future.cancel()
+            future.set_result(None)
             if user:
                 if 3 < user.warn:
                     await self.try_reconnect(user, reason="too many warn point")
