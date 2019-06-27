@@ -62,7 +62,7 @@ class User(object):
         "neers",  # ({host_port: header})  Neer clients info
         "score",  # (int )User score
         "warn",  # (int) User warning score
-        "write_lock",  # (Lock) socket lock object
+        "event",  # (Event) user event object used for PingPong
     )
 
     def __init__(self, header, number, reader, writer, host_port, aeskey, sock_type):
@@ -77,12 +77,17 @@ class User(object):
         # user experience
         self.score = 0
         self.warn = 0
-        self.write_lock = asyncio.Lock()
+        self.event = asyncio.Event()
 
     def __repr__(self):
         age = int(time()) - self.header.start_time
         host_port = self.host_port[0] + ":" + str(self.header.p2p_port)
-        status = 'closed' if self.closed else 'open'
+        if self.closed:
+            status = 'close'
+        elif not self.event.is_set():
+            status = 'ping..'
+        else:
+            status = 'open'
         return f"<User {self.header.name} {status} {age//60}m {host_port} {self.score}/{self.warn}>"
 
     def __del__(self):
@@ -97,11 +102,10 @@ class User(object):
             self._writer.close()
 
     async def send(self, msg):
-        async with self.write_lock:
-            self._writer.write(msg)
-            await self._writer.drain()
+        self._writer.write(msg)
+        await self._writer.drain()
 
-    async def recv(self, timeout=5.0):
+    async def recv(self, timeout=1.0):
         return await asyncio.wait_for(self._reader.read(8192), timeout)
 
     def getinfo(self):

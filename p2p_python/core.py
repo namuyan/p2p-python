@@ -55,8 +55,6 @@ class Core(object):
         self.core_que = asyncio.Queue()
         self.backlog = listen
         self.traffic = Traffic()
-        self._ping = asyncio.Event()
-        self._ping.set()
 
     def close(self):
         if not self.f_running:
@@ -74,19 +72,22 @@ class Core(object):
 
     async def ping(self, user: User, f_udp=False):
         try:
-            await asyncio.wait_for(self._ping.wait(), 5.0)
-            self._ping.clear()
+            await asyncio.wait_for(user.event.wait(), 10.0)
+            user.event.clear()
             await self.send_msg_body(msg_body=b'Ping', user=user, allow_udp=f_udp, f_pro_force=True)
-            await asyncio.wait_for(self._ping.wait(), 5.0)
-            self._ping.set()
+            await asyncio.wait_for(user.event.wait(), 5.0)
+            user.event.set()
             return True
         except asyncio.TimeoutError:
             log.debug(f"failed to udp ping {user}")
-            self._ping.set()
+            user.event.set()
             return False
         except ConnectionError as e:
             log.debug(f"socket error on ping by {e}")
-            self._ping.set()
+            user.event.set()
+            return False
+        except Exception:
+            log.error("ping exception", exc_info=True)
             return False
 
     def start(self, s_family=socket.AF_UNSPEC):
@@ -448,7 +449,7 @@ class Core(object):
                     await self.send_msg_body(b'Pong', user)
                 elif msg_body == b'Pong':
                     log.debug(f"receive Pong from {user.header.name}")
-                    self._ping.set()
+                    user.event.set()
                 else:
                     await self.core_que.put((user, msg_body))
                 f_raise_timeout = False
