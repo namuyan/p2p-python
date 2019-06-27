@@ -113,6 +113,8 @@ class Core(object):
         }
 
     async def create_connection(self, host, port):
+        if self.f_stop:
+            return False
         for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
             af, socktype, proto, canonname, host_port = res
             if host_port[0] in ban_address:
@@ -241,10 +243,8 @@ class Core(object):
         else:
             return False
 
-    async def send_msg_body(self, msg_body, user: Optional[User] = None, status=200, allow_udp=False, f_pro_force=False):
-        # StatusCode: https://ja.wikipedia.org/wiki/HTTPステータスコード
+    async def send_msg_body(self, msg_body, user: Optional[User] = None, allow_udp=False, f_pro_force=False):
         assert isinstance(msg_body, bytes), 'msg_body is bytes'
-        assert 200 <= status < 600, 'Not found status code {}'.format(status)
 
         # check user existence
         if len(self.user) == 0:
@@ -255,9 +255,9 @@ class Core(object):
 
         # send message
         if allow_udp and f_pro_force:
-            self._send_udp_body(msg_body, user)
+            loop.run_in_executor(None, self.send_udp_body, msg_body, user)
         elif allow_udp and user.header.p2p_udp_accept and len(msg_body) < 1400:
-            self._send_udp_body(msg_body, user)
+            loop.run_in_executor(None, self.send_udp_body, msg_body, user)
         else:
             msg_body = zlib.compress(msg_body)
             msg_body = AESCipher.encrypt(key=user.aeskey, raw=msg_body)
@@ -267,12 +267,14 @@ class Core(object):
             self.traffic.put_traffic_up(send_data)
         return user
 
-    def _send_udp_body(self, msg_body, user):
+    def send_udp_body(self, msg_body, user):
+        """send UDP message"""
         name_len = len(V.SERVER_NAME.encode()).to_bytes(1, 'big')
         msg_body = AESCipher.encrypt(key=user.aeskey, raw=msg_body)
         send_data = name_len + V.SERVER_NAME.encode() + msg_body
         host_port = user.get_host_port()
         sock_family = socket.AF_INET if len(host_port) == 2 else socket.AF_INET6
+        # warning: may block this closure, use run_in_executor
         with socket.socket(sock_family, socket.SOCK_DGRAM) as sock:
             sock.sendto(send_data, host_port)
         self.traffic.put_traffic_up(send_data)

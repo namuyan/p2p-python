@@ -237,6 +237,10 @@ class Peer2Peer(object):
             future = self._result_ques[uuid]
             if not future.done():
                 future.set_result((user, data))
+            else:
+                log.debug(f"uuid={uuid} type_response failed, already future done? {future}")
+        else:
+            log.debug(f"uuid={uuid} type_response failed, not found uuid")
 
     async def type_ack(self, user: User, item: dict):
         # cmd = item['cmd']
@@ -300,7 +304,6 @@ class Peer2Peer(object):
         try:
             await asyncio.wait_for(future, timeout)
             receive_user, item = future.result()
-            receive_user.warn = 0
             return receive_user, item
         except (asyncio.TimeoutError, asyncio.CancelledError):
             # timeout set CancelledError exception to future
@@ -309,10 +312,10 @@ class Peer2Peer(object):
         except Exception:
             log.debug("send_command exception", exc_info=True)
         if user:
-            if 3 < user.warn:
-                await self.try_reconnect(user, reason="too many warn point")
+            if await self.core.ping(user):
+                log.debug("timeout but ping success")
             else:
-                user.warn += 1
+                await self.try_reconnect(user, reason="ping failed on send_command")
         log.debug(f"timeout on sending cmd({cmd}) to {user}, id={uuid}")
         raise asyncio.TimeoutError("timeout cmd")
 
@@ -495,13 +498,11 @@ async def auto_stabilize_network(p2p: Peer2Peer):
                         del user_score[host_port]
             else:
                 # check warning point too high user
-                for user in sorted(p2p.core.user, key=lambda x: x.warn, reverse=True):
-                    if user.warn < 5:
-                        continue
-                    if await p2p.core.ping(user, f_udp=False):
+                for user in p2p.core.user.copy():
+                    if await p2p.core.ping(user):
                         continue
                     # looks problem on this user
-                    p2p.core.remove_connection(user, 'too many warn and ping failed')
+                    p2p.core.remove_connection(user, 'ping failed on stabilize loop')
                     break
 
         except asyncio.TimeoutError as e:
