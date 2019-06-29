@@ -331,6 +331,7 @@ class Peer2Peer(object):
             new_user = self.core.host_port2user(host_port)
             if new_user:
                 new_user.score = user.score
+                new_user.warn = user.warn
             return True
         else:
             log.warning(f"reconnect failed {user} {host_port}")
@@ -357,7 +358,7 @@ class Peer2Peer(object):
 
 async def auto_stabilize_network(
         p2p: Peer2Peer,
-        auto_reset_sticky=False,
+        auto_reset_sticky=True,
         self_disconnect=False,
 ):
     """
@@ -415,7 +416,7 @@ async def auto_stabilize_network(
             await asyncio.sleep(3)
         else:
             await asyncio.sleep(1.5 * (1 + random.random()) * len(p2p.core.user))
-        if count % 24 == 1 and len(sticky_nodes) > 0:
+        if count % 48 == 1 and len(sticky_nodes) > 0:
             if auto_reset_sticky:
                 log.debug(f"clean sticky_nodes [{len(sticky_nodes)}=>0]")
                 sticky_nodes.clear()
