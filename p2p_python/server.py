@@ -29,6 +29,10 @@ T_REQUEST = 'request'
 T_RESPONSE = 'response'
 T_ACK = 'ack'
 
+# stabilize objects
+user_score: Dict[tuple, int] = dict()
+sticky_nodes: Dict[tuple, int] = dict()
+
 
 class Peer2PeerCmd:
     # ノード間で内部的に用いるコマンド
@@ -351,8 +355,19 @@ class Peer2Peer(object):
         return False  # overwrite
 
 
-async def auto_stabilize_network(p2p: Peer2Peer):
-    """automatic stabilize p2p network"""
+async def auto_stabilize_network(
+        p2p: Peer2Peer,
+        auto_reset_sticky=False,
+        self_disconnect=False,
+):
+    """
+    automatic stabilize p2p network
+    params:
+        auto_reset_sticky: (bool) You know connections but can not connect again and again,
+            stabilizer mark "sticky" and ignore forever. This flag enable auto reset the mark.
+        self_disconnect: (bool) stabilizer keep a number of connection same with listen/2.
+            self disconnection avoid overflow backlog but will make unstable network.
+    """
     try:
         while not p2p.f_running:
             await asyncio.sleep(1.0)
@@ -392,8 +407,6 @@ async def auto_stabilize_network(p2p: Peer2Peer):
         return
 
     # start stabilize connection
-    user_score = dict()
-    sticky_nodes = dict()
     count = 0
     need_connection = 3
     while p2p.f_running:
@@ -403,8 +416,9 @@ async def auto_stabilize_network(p2p: Peer2Peer):
         else:
             await asyncio.sleep(1.5 * (1 + random.random()) * len(p2p.core.user))
         if count % 24 == 1 and len(sticky_nodes) > 0:
-            log.debug(f"clean sticky_nodes [{len(sticky_nodes)}=>0]")
-            sticky_nodes.clear()
+            if auto_reset_sticky:
+                log.debug(f"clean sticky_nodes [{len(sticky_nodes)}=>0]")
+                sticky_nodes.clear()
         try:
             if len(p2p.core.user) == 0 and len(p2p.peers) > 0:
                 host_port = random.choice(list(p2p.peers.keys()))
@@ -446,6 +460,8 @@ async def auto_stabilize_network(p2p: Peer2Peer):
 
             # Action join or remove or nothing
             if len(p2p.core.user) > p2p.core.backlog * 2 // 3:  # Remove
+                if not self_disconnect:
+                    continue
                 # スコアの下位半分を取得
                 sorted_score = sorted(user_score.items(), key=lambda x: x[1])[:len(user_score) // 3]
                 # 既接続のもののみを取得
@@ -527,4 +543,6 @@ __all__ = [
     "Peer2PeerCmd",
     "Peer2Peer",
     "auto_stabilize_network",
+    "user_score",
+    "sticky_nodes",
 ]
