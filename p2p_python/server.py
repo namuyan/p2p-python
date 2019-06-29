@@ -324,6 +324,9 @@ class Peer2Peer(object):
         host_port = user.get_host_port()
         if await self.core.create_connection(host=host_port[0], port=host_port[1]):
             log.debug(f"reconnect success {user} {host_port}")
+            new_user = self.core.host_port2user(host_port)
+            if new_user:
+                new_user.score = user.score
             return True
         else:
             log.warning(f"reconnect failed {user} {host_port}")

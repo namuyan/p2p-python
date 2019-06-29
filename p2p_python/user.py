@@ -63,6 +63,7 @@ class User(object):
         "score",  # (int )User score
         "warn",  # (int) User warning score
         "event",  # (Event) user event object used for PingPong
+        "create_time",  # (int) User object creation time
     )
 
     def __init__(self, header, number, reader, writer, host_port, aeskey, sock_type):
@@ -78,9 +79,11 @@ class User(object):
         self.score = 0
         self.warn = 0
         self.event = asyncio.Event()
+        self.create_time = int(time())
 
     def __repr__(self):
-        age = int(time()) - self.header.start_time
+        age = (int(time()) - self.header.start_time) // 60
+        passed = (int(time()) - self.create_time) // 60
         host_port = self.host_port[0] + ":" + str(self.header.p2p_port)
         if self.closed:
             status = 'close'
@@ -88,7 +91,7 @@ class User(object):
             status = 'ping..'
         else:
             status = 'open'
-        return f"<User {self.header.name} {status} {age//60}m {host_port} {self.score}/{self.warn}>"
+        return f"<User {self.header.name} {status} {passed}/{age}m ({host_port}) {self.score}/{self.warn}>"
 
     def __del__(self):
         self.close()
