@@ -8,7 +8,6 @@ from p2p_python.serializer import *
 from expiringdict import ExpiringDict
 from time import time
 from logging import getLogger
-from collections import deque
 from typing import Dict, List, Optional
 import asyncio
 import os.path
@@ -55,8 +54,8 @@ class Peer2Peer(object):
         # connection objects
         self.core = Core(host='localhost' if f_local else None, listen=listen)
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
-        self._broadcast_uuid = deque(maxlen=listen * 20)  # Broadcastされたuuid
-        self._result_ques: Dict[int, asyncio.Future] = ExpiringDict(max_len=1000, max_age_seconds=900)
+        self.broadcast_status = ExpiringDict(max_len=5000, max_age_seconds=900)  # status of broadcast data
+        self.result_futures: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=900)
         self.peers = PeerData(os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
@@ -73,7 +72,6 @@ class Peer2Peer(object):
         broadcast_que = asyncio.Queue()
 
         async def inner_loop():
-            user: Optional[User] = None
             log.info("start P2P inner loop")
             while not self.f_stop:
                 try:
@@ -153,6 +151,7 @@ class Peer2Peer(object):
         allows: List[User] = list()
         denys: List[User] = list()
         ack_list: List[User] = list()
+        ack_status: Optional[bool] = None
         allow_udp = False
 
         if item['cmd'] == Peer2PeerCmd.PING_PONG:
@@ -163,31 +162,39 @@ class Peer2Peer(object):
             allows.append(user)
 
         elif item['cmd'] == Peer2PeerCmd.BROADCAST:
-            if item['uuid'] in self._broadcast_uuid:
-                return  # already get broadcast data
-            elif item['uuid'] in self._result_ques:
-                return  # I'm broadcaster, get from ack
+            if item['uuid'] in self.broadcast_status:
+                # already get broadcast data, only send ACK
+                ack_status = self.broadcast_status[item['uuid']]
+                ack_list.append(user)
+            elif item['uuid'] in self.result_futures:
+                # I'm broadcaster, get from ack
+                ack_status = True
+                ack_list.append(user)
             else:
                 # try to check broadcast data
                 if asyncio.iscoroutinefunction(self.broadcast_check):
                     broadcast_result = await asyncio.wait_for(self.broadcast_check(user, item['data']), 10.0)
                 else:
                     broadcast_result = self.broadcast_check(user, item['data'])
+                # set broadcast result
+                self.broadcast_status[item['uuid']] = broadcast_result
+                # prepare response
                 if broadcast_result:
                     user.score += 1
-                    self._broadcast_uuid.append(item['uuid'])
+                    # send ACK
+                    ack_status = True
+                    ack_list.append(user)
+                    # broadcast to all
                     allows = self.core.user.copy()
                     denys.append(user)
-                    # send ACK
-                    ack_list.append(user)
-                    # send Response
                     temperate['type'] = T_REQUEST
                     temperate['data'] = item['data']
                     allow_udp = True
                 else:
                     user.warn += 1
-                    self._broadcast_uuid.append(item['uuid'])
-                    return  # not allowed broadcast data
+                    # send ACK
+                    ack_status = False
+                    ack_list.append(user)
 
         elif item['cmd'] == Peer2PeerCmd.GET_PEER_INFO:
             # [[(host,port), header],..]
@@ -224,9 +231,10 @@ class Peer2Peer(object):
         # send ack
         ack_count = 0
         if len(ack_list) > 0:
+            assert ack_status is not None
             ack_temperate = temperate.copy()
             ack_temperate['type'] = T_ACK
-            ack_temperate['data'] = send_count
+            ack_temperate['data'] = ack_status
             ack_count = await self._send_many_users(item=ack_temperate, allows=ack_list, denys=[])
         # debug
         if Debug.P_SEND_RECEIVE_DETAIL:
@@ -237,8 +245,8 @@ class Peer2Peer(object):
         # cmd = item['cmd']
         data = item['data']
         uuid = item['uuid']
-        if uuid in self._result_ques:
-            future = self._result_ques[uuid]
+        if uuid in self.result_futures:
+            future = self.result_futures[uuid]
             if not future.done():
                 future.set_result((user, data))
             else:
@@ -248,13 +256,13 @@ class Peer2Peer(object):
 
     async def type_ack(self, user: User, item: dict):
         # cmd = item['cmd']
-        data = item['data']
+        ack_status = bool(item['data'])
         uuid = item['uuid']
 
-        if uuid in self._result_ques:
-            future = self._result_ques[uuid]
-            if not future.done():
-                future.set_result((user, data))
+        if uuid in self.result_futures:
+            future = self.result_futures[uuid]
+            if ack_status and not future.done():
+                future.set_result((user, ack_status))
 
     async def _send_many_users(self, item, allows: List[User], denys: List[User], allow_udp=False) -> int:
         """send to many user and return how many send"""
@@ -299,7 +307,7 @@ class Peer2Peer(object):
 
         # 3. Send message to a node or some nodes
         future = asyncio.Future()
-        self._result_ques[uuid] = future
+        self.result_futures[uuid] = future
         send_num = await self._send_many_users(item=temperate, allows=allows, denys=[], allow_udp=f_udp)
         if send_num == 0:
             raise PeerToPeerError(f"We try to send no users? {len(self.core.user)}user connected")
