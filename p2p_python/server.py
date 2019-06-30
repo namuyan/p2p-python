@@ -92,10 +92,10 @@ class Peer2Peer(object):
                     elif item['type'] == T_REQUEST:
                         if item['cmd'] == Peer2PeerCmd.BROADCAST:
                             # process broadcast cmd one by one
-                            await broadcast_que.put((user, item, time()))
+                            await broadcast_que.put((user, item, push_time))
                         else:
                             # process normal request async
-                            asyncio.ensure_future(self.type_request(user, item))
+                            asyncio.ensure_future(self.type_request(user, item, push_time))
                     elif item['type'] == T_RESPONSE:
                         await self.type_response(user, item)
                         user.header.update_last_seen()
@@ -116,14 +116,14 @@ class Peer2Peer(object):
             log.info("start broadcast_loop")
             while not self.f_stop:
                 try:
-                    user, item, ntime = await asyncio.wait_for(broadcast_que.get(), 1.0)
+                    user, item, push_time = await asyncio.wait_for(broadcast_que.get(), 1.0)
                 except asyncio.TimeoutError:
                     continue
                 try:
-                    if time() - ntime < 5.0:
-                        await asyncio.wait_for(self.type_request(user, item), 10.0)
+                    if time() - push_time < 5.0:
+                        await asyncio.wait_for(self.type_request(user, item, push_time), 10.0)
                     else:
-                        log.warning(f"try to process broadcast but too late, {int(time()-ntime)}s")
+                        log.warning(f"try to process broadcast but too late, {int(time()-push_time)}s")
                 except asyncio.TimeoutError:
                     log.info(f"broadcast relay failed from {user}")
                     user.warn += 1
@@ -141,12 +141,13 @@ class Peer2Peer(object):
         log.info(f"start user, name={V.SERVER_NAME} port={V.P2P_PORT}")
         self.f_running = True
 
-    async def type_request(self, user: User, item: dict):
+    async def type_request(self, user: User, item: dict, push_time: float):
         temperate = {
             'type': T_RESPONSE,
             'cmd': item['cmd'],
             'data': None,
             'time': time(),
+            'received': push_time,
             'uuid': item['uuid']
         }
         allows: List[User] = list()
@@ -308,16 +309,21 @@ class Peer2Peer(object):
         send_num = await self._send_many_users(item=temperate, allows=allows, denys=[], allow_udp=f_udp)
         if send_num == 0:
             raise PeerToPeerError(f"We try to send no users? {len(self.core.user)}user connected")
+        if Debug.P_SEND_RECEIVE_DETAIL:
+            log.debug(f"send({send_num}) => {temperate}")
+        start = time()
 
         # 4. Get response
         try:
             await asyncio.wait_for(future, timeout)
             receive_user, item = future.result()
+            if 5.0 < time() - start:
+                log.debug(f"socket {int(time()-start)}s blocked? id={uuid} {receive_user}")
             return receive_user, item
         except (asyncio.TimeoutError, asyncio.CancelledError):
             # timeout set CancelledError exception to future
             # do not care future
-            pass
+            log.debug(f"timeout now, cmd({cmd}) to {user}, id={uuid}")
         except Exception:
             log.debug("send_command exception", exc_info=True)
         if user:
