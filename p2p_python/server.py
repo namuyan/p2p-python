@@ -94,7 +94,8 @@ class Peer2Peer(object):
                             # process broadcast cmd one by one
                             await broadcast_que.put((user, item, time()))
                         else:
-                            await self.type_request(user, item)
+                            # process normal request async
+                            asyncio.ensure_future(self.type_request(user, item))
                     elif item['type'] == T_RESPONSE:
                         await self.type_response(user, item)
                         user.header.update_last_seen()
@@ -216,15 +217,11 @@ class Peer2Peer(object):
 
         elif item['cmd'] == Peer2PeerCmd.DIRECT_CMD:
             data = item['data']
-
-            async def direct_cmd():
+            if self.event.have_event(data['cmd']):
+                allows.append(user)
                 temperate['data'] = await self.event.ignition(user, data['cmd'], data['data'])
-                await self._send_many_users(item=temperate, allows=[user], denys=[])
-
-            if 'cmd' in data and self.event.have_event(data['cmd']):
-                asyncio.ensure_future(direct_cmd())
         else:
-            pass
+            log.debug(f"not found request cmd '{item['cmd']}'")
 
         # send message
         send_count = await self._send_many_users(item=temperate, allows=allows, denys=denys, allow_udp=allow_udp)
