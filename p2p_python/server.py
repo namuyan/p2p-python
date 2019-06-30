@@ -75,7 +75,7 @@ class Peer2Peer(object):
             log.info("start P2P inner loop")
             while not self.f_stop:
                 try:
-                    user, msg_body = await asyncio.wait_for(self.core.core_que.get(), 1.0)
+                    user, msg_body, push_time = await asyncio.wait_for(self.core.core_que.get(), 1.0)
                     item = loads(b=msg_body, object_hook=self.object_hook)
                 except asyncio.TimeoutError:
                     continue
@@ -84,7 +84,7 @@ class Peer2Peer(object):
                     continue
 
                 if Debug.P_SEND_RECEIVE_DETAIL:
-                    log.debug(f"receive => {item}")
+                    log.debug(f"receive {int(time()-push_time)}s => {item}")
 
                 try:
                     if not isinstance(item, dict):

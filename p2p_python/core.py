@@ -453,7 +453,7 @@ class Core(object):
                     log.debug(f"receive Pong from {user.header.name}")
                     user.event.set()
                 else:
-                    await self.core_que.put((user, msg_body))
+                    await self.core_que.put((user, msg_body, time()))
                 f_raise_timeout = False
 
             except asyncio.TimeoutError:
@@ -564,7 +564,7 @@ async def udp_server_handle(msg, addr, core: Core):
             await core.send_msg_body(msg_body=b'Pong', user=user)
         else:
             log.debug(f"get udp packet from {user.header.name} addr:{addr}")
-            await core.core_que.put((user, msg_body))
+            await core.core_que.put((user, msg_body, time()))
     except ValueError as e:
         log.debug(f"maybe decrypt failed by {e} {msg_body}")
     except OSError as e:
