@@ -155,7 +155,7 @@ class Peer2Peer(object):
             'type': T_RESPONSE,
             'cmd': item['cmd'],
             'data': None,
-            'time': time(),
+            'time': None,
             'received': push_time,
             'uuid': item['uuid']
         }
@@ -234,6 +234,7 @@ class Peer2Peer(object):
             log.debug(f"not found request cmd '{item['cmd']}'")
 
         # send message
+        temperate['time'] = time()
         send_count = await self._send_many_users(item=temperate, allows=allows, denys=denys, allow_udp=allow_udp)
         # send ack
         ack_count = 0
