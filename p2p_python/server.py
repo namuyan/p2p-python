@@ -247,8 +247,10 @@ class Peer2Peer(object):
             future = self.result_futures[uuid]
             if not future.done():
                 future.set_result((user, data))
+            elif future.cancelled():
+                log.debug(f"uuid={uuid} type_response failed, already future canceled")
             else:
-                log.debug(f"uuid={uuid} type_response failed, already future done? {future}")
+                pass
         else:
             log.debug(f"uuid={uuid} type_response failed, not found uuid")
 
@@ -276,8 +278,8 @@ class Peer2Peer(object):
                     log.debug(f"failed send msg to {user} by {str(e)}")
         return count
 
-    async def send_command(self, cmd, data=None, user=None, timeout=10.0) -> (User, dict):
-        assert 0 < timeout
+    async def send_command(self, cmd, data=None, user=None, timeout=10.0, retry=2) -> (User, dict):
+        assert 0.0 < timeout and 0 < retry
         uuid = random.randint(10, 0xffffffff)
         # 1. Make template
         temperate = {
@@ -304,35 +306,48 @@ class Peer2Peer(object):
             raise PeerToPeerError("Not found user in list")
 
         # 3. Send message to a node or some nodes
+        start = time()
         future = asyncio.Future()
         self.result_futures[uuid] = future
-        send_num = await self._send_many_users(item=temperate, allows=allows, denys=[], allow_udp=f_udp)
-        if send_num == 0:
-            raise PeerToPeerError(f"We try to send no users? {len(self.core.user)}user connected")
-        if Debug.P_SEND_RECEIVE_DETAIL:
-            log.debug(f"send({send_num}) => {temperate}")
-        start = time()
 
-        # 4. Get response
-        try:
-            await asyncio.wait_for(future, timeout)
-            receive_user, item = future.result()
-            if 5.0 < time() - start:
-                log.debug(f"socket {int(time()-start)}s blocked? id={uuid} {receive_user}")
-            return receive_user, item
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            # timeout set CancelledError exception to future
-            # do not care future
-            log.debug(f"timeout now, cmd({cmd}) to {user}, id={uuid}")
-        except Exception:
-            log.debug("send_command exception", exc_info=True)
-        if user:
-            if await self.core.ping(user):
-                log.debug("timeout but ping success")
-            else:
+        f_retry = False
+        for _ in range(retry):
+            send_num = await self._send_many_users(item=temperate, allows=allows, denys=[], allow_udp=f_udp)
+            if send_num == 0:
+                raise PeerToPeerError(f"We try to send no users? {len(self.core.user)}user connected")
+            if Debug.P_SEND_RECEIVE_DETAIL:
+                log.debug(f"send({send_num}) => {temperate}")
+
+            # 4. Get response
+            try:
+                # avoid future canceled by wait_for
+                await asyncio.wait_for(asyncio.shield(future), timeout / retry)
+                if 5.0 < time() - start:
+                    log.debug(f"id={uuid}, command {int(time()-start)}s blocked by {user}")
+                break
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                log.debug(f"id={uuid}, timeout now, cmd({cmd}) to {user}")
+            except Exception:
+                log.debug("send_command exception", exc_info=True)
+
+            # 5. will lost packet
+            f_retry = True
+            log.debug(f"id={uuid}, will lost packet and retry")
+
+        # 6. timeout
+        if f_retry and user:
+            if user.closed or not await self.core.ping(user):
+                # already closed or ping failed -> reconnect
                 await self.try_reconnect(user, reason="ping failed on send_command")
-        log.debug(f"timeout on sending cmd({cmd}) to {user}, id={uuid}")
-        raise asyncio.TimeoutError("timeout cmd")
+            else:
+                log.debug("timeout and retry but ping success")
+
+        # 7. return result
+        if future.done():
+            return future.result()
+        else:
+            future.cancel()
+            raise asyncio.TimeoutError("timeout cmd")
 
     async def try_reconnect(self, user, reason):
         self.core.remove_connection(user, reason)
