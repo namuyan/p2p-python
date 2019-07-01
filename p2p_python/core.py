@@ -211,7 +211,7 @@ class Core(object):
             asyncio.ensure_future(self.receive_loop(new_user))
             # server port's reachable check
             await asyncio.sleep(1.0)
-            await self.check_reachable(new_user)
+            asyncio.ensure_future(self.check_reachable(new_user))
             return True
         except PeerToPeerError as e:
             msg = "peer2peer error, {} ({})".format(e, host)
@@ -236,9 +236,9 @@ class Core(object):
         if user in self.user:
             self.user.remove(user)
             if 0 < user.score:
-                log.info(f"remove connection of {user.header.name} by '{reason}'")
+                log.info(f"remove connection of {user} by '{reason}'")
             else:
-                log.debug(f"remove connection of {user.header.name} by '{reason}'")
+                log.debug(f"remove connection of {user} by '{reason}'")
             return True
         else:
             return False
@@ -348,7 +348,7 @@ class Core(object):
             asyncio.ensure_future(self.receive_loop(new_user))
             # server port's reachable check
             await asyncio.sleep(1.0)
-            await self.check_reachable(new_user)
+            asyncio.ensure_future(self.check_reachable(new_user))
             return
         except (ConnectionAbortedError, ConnectionResetError) as e:
             msg = f"disconnect error {host_port} {e}"
