@@ -349,18 +349,20 @@ class Peer2Peer(object):
             future.cancel()
             raise asyncio.TimeoutError("timeout cmd")
 
-    async def try_reconnect(self, user, reason):
+    async def try_reconnect(self, user: User, reason: str):
         self.core.remove_connection(user, reason)
         host_port = user.get_host_port()
-        if await self.core.create_connection(host=host_port[0], port=host_port[1]):
-            log.debug(f"reconnect success {user} {host_port}")
+        if not user.header.p2p_accept:
+            return False
+        elif await self.core.create_connection(host=host_port[0], port=host_port[1]):
+            log.debug(f"reconnect success {user}")
             new_user = self.core.host_port2user(host_port)
             if new_user:
                 new_user.score = user.score
                 new_user.warn = user.warn
             return True
         else:
-            log.warning(f"reconnect failed {user} {host_port}")
+            log.warning(f"reconnect failed {user}")
             return False
 
     async def send_direct_cmd(self, cmd, data, user=None) -> (User, dict):
@@ -571,5 +573,5 @@ __all__ = [
     "Peer2Peer",
     "auto_stabilize_network",
     "user_score",
-    "sticky_nodes",
+    "sticky_peers",
 ]
