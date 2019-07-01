@@ -8,7 +8,7 @@ from p2p_python.serializer import *
 from expiringdict import ExpiringDict
 from time import time
 from logging import getLogger
-from typing import Dict, List, Optional
+from typing import Dict, List, Set, Optional
 import asyncio
 import os.path
 import random
@@ -30,7 +30,16 @@ T_ACK = 'ack'
 
 # stabilize objects
 user_score: Dict[tuple, int] = dict()
-sticky_nodes: Dict[tuple, int] = dict()
+sticky_peers: Set[tuple] = set()
+ignore_peers = {
+    # ipv4
+    (GLOBAL_IPV4, V.P2P_PORT),
+    (LOCAL_IP, V.P2P_PORT),
+    ('127.0.0.1', V.P2P_PORT),
+    # ipv6
+    (GLOBAL_IPV6, V.P2P_PORT, 0, 0),
+    ('::1', V.P2P_PORT, 0, 0),
+}
 
 
 class Peer2PeerCmd:
@@ -397,79 +406,62 @@ async def auto_stabilize_network(
         self_disconnect: (bool) stabilizer keep a number of connection same with listen/2.
             self disconnection avoid overflow backlog but will make unstable network.
     """
-    try:
-        while not p2p.f_running:
-            await asyncio.sleep(1.0)
-        log.info("start auto stabilize loop")
-        ignore_peers = {
-            # ipv4
-            (GLOBAL_IPV4, V.P2P_PORT),
-            (LOCAL_IP, V.P2P_PORT),
-            ('127.0.0.1', V.P2P_PORT),
-            # ipv6
-            (GLOBAL_IPV6, V.P2P_PORT, 0, 0),
-            ('::1', V.P2P_PORT, 0, 0),
-        }
-        if len(p2p.peers) == 0:
-            log.info("peer list is zero, need bootnode")
-        else:
-            need = max(1, p2p.core.backlog // 2)
-            log.info(f"connect first nodes, min {need} users")
-            peer_host_port = list(p2p.peers.keys())
-            random.shuffle(peer_host_port)
-            for host_port in peer_host_port:
-                if host_port in ignore_peers:
-                    p2p.peers.remove_from_memory(host_port)
-                    continue
-                header = p2p.peers.get(host_port)
-                if header and header.p2p_accept:
-                    if await p2p.core.create_connection(host=host_port[0], port=host_port[1]):
-                        need -= 1
-                    else:
-                        p2p.peers.remove_from_memory(host_port)
-                if need <= 0:
-                    break
-                else:
-                    await asyncio.sleep(5)
-    except Exception:
-        log.debug("init auto stabilize exception", exc_info=True)
-        return
+    # wait for P2P running
+    while not p2p.f_running:
+        await asyncio.sleep(1.0)
+    log.info(f"start auto stabilize loop known={len(p2p.peers)}")
+
+    # show info
+    if len(p2p.peers) == 0:
+        log.info("peer list is zero, need bootnode")
 
     # start stabilize connection
     count = 0
     need_connection = 3
     while p2p.f_running:
         count += 1
+
+        # wait
         if len(p2p.core.user) <= need_connection:
-            await asyncio.sleep(3)
+            await asyncio.sleep(3.0)
         else:
-            await asyncio.sleep(1.5 * (1 + random.random()) * len(p2p.core.user))
-        if count % 48 == 1 and len(sticky_nodes) > 0:
+            await asyncio.sleep(4.0 * (4.5 + random.random()))  # wait 18s~20s
+
+        # clear sticky
+        if count % 13 == 0 and len(sticky_peers) > 0:
             if auto_reset_sticky:
-                log.debug(f"clean sticky_nodes [{len(sticky_nodes)}=>0]")
-                sticky_nodes.clear()
+                log.debug(f"clean sticky_nodes num={len(sticky_peers)}")
+                sticky_peers.clear()
+
         try:
-            if len(p2p.core.user) == 0 and len(p2p.peers) > 0:
-                host_port = random.choice(list(p2p.peers.keys()))
-                if host_port in ignore_peers:
-                    p2p.peers.remove_from_memory(host_port)
+            # no connection and try to connect from peer list
+            if 0 == len(p2p.core.user):
+                if 0 < len(p2p.peers):
+                    peers = list(p2p.peers.keys())
+                    while 0 < len(peers) and len(p2p.core.user) < need_connection:
+                        host_port = peers.pop()
+                        if host_port in ignore_peers:
+                            p2p.peers.remove_from_memory(host_port)
+                        elif await p2p.core.create_connection(host_port[0], host_port[1]):
+                            pass
+                        else:
+                            sticky_peers.add(host_port)
+                    log.info(f"init connection num={len(p2p.core.user)}")
                     continue
-                if await p2p.core.create_connection(host_port[0], host_port[1]):
-                    await asyncio.sleep(5)
                 else:
-                    p2p.peers.remove_from_memory(host_port)
+                    log.info("no peer info and no connections, wait 5s")
+                    await asyncio.sleep(5.0)
                     continue
-            elif len(p2p.core.user) == 0 and len(p2p.peers) == 0:
-                await asyncio.sleep(10)
-                continue
+
+            # update 1 user's neer info one by one
+            if 0 < len(p2p.core.user):
+                update_user = p2p.core.user[count % len(p2p.core.user)]
+                _, item = await p2p.send_command(cmd=Peer2PeerCmd.GET_NEARS, user=update_user)
+                update_user.update_neers(item)
 
             # peer list update (user)
             for user in p2p.core.user:
                 p2p.peers.add(user)
-
-            # update near info
-            sample_user, item = await p2p.send_command(cmd=Peer2PeerCmd.GET_NEARS)
-            sample_user.update_neers(item)
 
             # Calculate score (高ければ優先度が高い)
             search = set(p2p.peers.keys())
@@ -477,10 +469,9 @@ async def auto_stabilize_network(
                 for host_port in user.neers.keys():
                     search.add(host_port)
             search.difference_update(ignore_peers)
-            average = sum(user_score.values()) // len(user_score) if len(user_score) > 0 else 0
+            search.difference_update(sticky_peers)
             for host_port in search:  # 第一・二層を含む
-                score = user_score[host_port] if host_port in user_score else 20
-                score -= average
+                score = 0
                 score += sum(1 for user in p2p.core.user if host_port in user.neers)  # 第二層は加点
                 score -= sum(1 for user in p2p.core.user if host_port == user.get_host_port())  # 第一層は減点
                 user_score[host_port] = max(-20, min(20, score))
@@ -497,9 +488,8 @@ async def auto_stabilize_network(
                 already_connected = tuple(user.get_host_port() for user in p2p.core.user)
                 sorted_score = list(filter(lambda x: x[0] in already_connected, sorted_score))
                 if len(sorted_score) == 0:
-                    await asyncio.sleep(10)
                     continue
-                log.debug(f"remove score {sorted_score}")
+                log.debug(f"try to remove score {sorted_score}")
                 host_port, score = random.choice(sorted_score)
                 user = p2p.core.host_port2user(host_port)
                 if user is None:
@@ -510,6 +500,7 @@ async def auto_stabilize_network(
                     log.debug(f"remove connection {score} {user} {host_port}")
                 else:
                     log.warning("failed remove connection. Already disconnected?")
+                    sticky_peers.add(host_port)
                     if p2p.peers.remove_from_memory(host_port):
                         del user_score[host_port]
 
@@ -521,7 +512,7 @@ async def auto_stabilize_network(
                 already_connected = tuple(user.get_host_port() for user in p2p.core.user)
                 sorted_score = list(filter(lambda x:
                                            x[0] not in already_connected and
-                                           sticky_nodes.get(x[0], 0) < STICKY_LIMIT,
+                                           x[0] not in sticky_peers,
                                            sorted_score))
                 if len(sorted_score) == 0:
                     await asyncio.sleep(10)
@@ -530,7 +521,7 @@ async def auto_stabilize_network(
                 host_port, score = random.choice(sorted_score)
                 if p2p.core.host_port2user(host_port):
                     continue  # 既に接続済み
-                elif sticky_nodes.get(host_port, 0) > STICKY_LIMIT:
+                elif host_port in sticky_peers:
                     continue  # 接続不能回数大杉
                 elif host_port in ignore_peers:
                     p2p.peers.remove_from_memory(host_port)
@@ -541,17 +532,11 @@ async def auto_stabilize_network(
                     log.debug(f"new connection {host_port}")
                 else:
                     log.debug(f"failed connect try, remove {host_port}")
-                    sticky_nodes[host_port] = sticky_nodes.get(host_port, 0) + 1
+                    sticky_peers.add(host_port)
                     if p2p.peers.remove_from_memory(host_port):
                         del user_score[host_port]
             else:
-                # check warning point too high user
-                for user in p2p.core.user.copy():
-                    if await p2p.core.ping(user):
-                        continue
-                    # looks problem on this user
-                    p2p.core.remove_connection(user, 'ping failed on stabilize loop')
-                    break
+                pass
 
         except asyncio.TimeoutError as e:
             log.info(f"stabilize {str(e)}")

@@ -127,7 +127,6 @@ class Core(object):
                     sock.setproxy(socks.PROXY_TYPE_SOCKS5, V.TOR_CONNECTION[0], V.TOR_CONNECTION[1])
                 else:
                     sock = socket.socket(af, socktype, proto)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 future = loop.run_in_executor(None, sock.connect, host_port)
                 await asyncio.wait_for(future, 10.0)
                 future.result()  # raised exception of socket
@@ -584,7 +583,6 @@ def create_tcp_server(core: Core, family, host_port):
 def create_udp_server(core: Core, family, host_port):
     assert family == socket.AF_INET or family == socket.AF_INET6
     sock = socket.socket(family, socket.SOCK_DGRAM, 0)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setblocking(False)
     sock.bind(host_port)
     fd = sock.fileno()
