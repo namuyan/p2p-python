@@ -320,7 +320,7 @@ class Peer2Peer(object):
         future = asyncio.Future()
         self.result_futures[uuid] = future
 
-        f_retry = False
+        f_timeout = False
         for _ in range(retry):
             send_num = await self._send_many_users(item=temperate, allows=allows, denys=[], allow_udp=f_udp)
             if send_num == 0:
@@ -344,8 +344,11 @@ class Peer2Peer(object):
             f_retry = True
             log.debug(f"id={uuid}, will lost packet and retry")
 
+        else:
+            f_timeout = True
+
         # 6. timeout
-        if f_retry and user:
+        if f_timeout and user:
             if user.closed or not await self.core.ping(user):
                 # already closed or ping failed -> reconnect
                 await self.try_reconnect(user, reason="ping failed on send_command")
@@ -368,6 +371,7 @@ class Peer2Peer(object):
             log.debug(f"reconnect success {user}")
             new_user = self.core.host_port2user(host_port)
             if new_user:
+                new_user.neers = user.neers
                 new_user.score = user.score
                 new_user.warn = user.warn
             return True
