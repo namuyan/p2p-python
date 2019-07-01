@@ -577,12 +577,16 @@ def create_tcp_server(core: Core, family, host_port):
     coroutine = asyncio.start_server(
         core.initial_connection_check, host_port[0], host_port[1],
         family=family, backlog=core.backlog, loop=loop)
-    return loop.run_until_complete(coroutine)
+    abstract_server = loop.run_until_complete(coroutine)
+    for sock in abstract_server.sockets:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    return abstract_server
 
 
 def create_udp_server(core: Core, family, host_port):
     assert family == socket.AF_INET or family == socket.AF_INET6
     sock = socket.socket(family, socket.SOCK_DGRAM, 0)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setblocking(False)
     sock.bind(host_port)
     fd = sock.fileno()
