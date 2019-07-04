@@ -56,20 +56,26 @@ class Peer2Peer(object):
 
     def __init__(self, listen=15, f_local=False, default_hook=None, object_hook=None):
         assert V.DATA_PATH is not None, 'Setup p2p params before PeerClientClass init.'
-        # status params
+
+        # object control params
         self.f_stop = False
         self.f_finish = False
         self.f_running = False
-        # connection objects
+
+        # co-objects
         self.core = Core(host='localhost' if f_local else None, listen=listen)
-        self.event = EventIgnition()  # DirectCmdを受け付ける窓口
-        self.broadcast_status = ExpiringDict(max_len=5000, max_age_seconds=900)  # status of broadcast data
-        self.result_futures: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=900)
         self.peers = PeerData(os.path.join(V.DATA_PATH, 'peer.dat'))  # {(host, port): header,..}
+        self.event = EventIgnition()  # DirectCmdを受け付ける窓口
+
+        # data status control
+        self.broadcast_status: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=900)
+        self.result_futures: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=900)
+
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
             self.core.traffic.recode_dir = V.DATA_PATH
-        # serializer/deserializer function
+
+        # serializer/deserializer hook
         self.default_hook = default_hook
         self.object_hook = object_hook
 
@@ -78,8 +84,6 @@ class Peer2Peer(object):
         self.core.close()
 
     def setup(self, s_family=socket.AF_UNSPEC, f_stabilize=True):
-        broadcast_que = asyncio.Queue()
-
         async def inner_loop():
             log.info("start P2P inner loop")
             while not self.f_stop:
@@ -99,12 +103,8 @@ class Peer2Peer(object):
                     if not isinstance(item, dict):
                         log.debug("unrecognized message receive")
                     elif item['type'] == T_REQUEST:
-                        if item['cmd'] == Peer2PeerCmd.BROADCAST:
-                            # process broadcast cmd one by one
-                            await broadcast_que.put((user, item, push_time))
-                        else:
-                            # process normal request async
-                            asyncio.ensure_future(self.type_request(user, item, push_time))
+                        # process request asynchronously
+                        asyncio.ensure_future(self.type_request(user, item, push_time))
                     elif item['type'] == T_RESPONSE:
                         await self.type_response(user, item)
                         user.header.update_last_seen()
@@ -121,32 +121,12 @@ class Peer2Peer(object):
             self.f_running = False
             log.info("close inner_loop process")
 
-        async def broadcast_loop():
-            log.info("start broadcast_loop")
-            while not self.f_stop:
-                try:
-                    user, item, push_time = await asyncio.wait_for(broadcast_que.get(), 1.0)
-                except asyncio.TimeoutError:
-                    continue
-                try:
-                    if time() - push_time < 5.0:
-                        await asyncio.wait_for(self.type_request(user, item, push_time), 10.0)
-                    else:
-                        log.warning(f"try to process broadcast but too late, {int(time()-push_time)}s")
-                except asyncio.TimeoutError:
-                    log.info(f"broadcast relay failed from {user}")
-                    user.warn += 1
-                except Exception:
-                    log.warning('broadcast_loop exception', exc_info=True)
-            log.info("close broadcast_loop")
-
         assert not loop.is_running(), "setup before event loop start!"
         self.core.start(s_family=s_family)
         if f_stabilize:
             loop_futures.append(asyncio.ensure_future(auto_stabilize_network(self)))
         # Processing
         loop_futures.append(asyncio.ensure_future(inner_loop()))
-        loop_futures.append(asyncio.ensure_future(broadcast_loop()))
         log.info(f"start user, name={V.SERVER_NAME} port={V.P2P_PORT}")
         self.f_running = True
 
@@ -175,20 +155,27 @@ class Peer2Peer(object):
         elif item['cmd'] == Peer2PeerCmd.BROADCAST:
             if item['uuid'] in self.broadcast_status:
                 # already get broadcast data, only send ACK
-                ack_status = self.broadcast_status[item['uuid']]
+                future = self.broadcast_status[item['uuid']]
+                # send ACK after broadcast_check finish
+                await asyncio.wait_for(future, 10.0)
+                ack_status = future.result()
                 ack_list.append(user)
+
             elif item['uuid'] in self.result_futures:
                 # I'm broadcaster, get from ack
                 ack_status = True
                 ack_list.append(user)
             else:
+                # set future
+                future = asyncio.Future()
+                self.broadcast_status[item['uuid']] = future
                 # try to check broadcast data
                 if asyncio.iscoroutinefunction(self.broadcast_check):
                     broadcast_result = await asyncio.wait_for(self.broadcast_check(user, item['data']), 10.0)
                 else:
                     broadcast_result = self.broadcast_check(user, item['data'])
                 # set broadcast result
-                self.broadcast_status[item['uuid']] = broadcast_result
+                future.set_result(broadcast_result)
                 # prepare response
                 if broadcast_result:
                     user.score += 1
