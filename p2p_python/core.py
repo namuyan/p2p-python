@@ -5,12 +5,13 @@ from p2p_python.tool.traffic import Traffic
 from p2p_python.tool.utils import AESCipher
 from ecdsa.keys import SigningKey, VerifyingKey
 from ecdsa.curves import NIST256p
-from typing import Optional, Union, List
+from typing import Optional, Dict, List
 from logging import getLogger
 from binascii import a2b_hex
 from time import time
 from io import BytesIO
 from hashlib import sha256
+from expiringdict import ExpiringDict
 from asyncio.streams import StreamWriter, StreamReader
 import asyncio
 import json
@@ -55,6 +56,7 @@ class Core(object):
         self.core_que = asyncio.Queue()
         self.backlog = listen
         self.traffic = Traffic()
+        self.ping_status: Dict[int, asyncio.Event] = ExpiringDict(max_len=5000, max_age_seconds=900)
 
     def close(self):
         if not self.f_running:
@@ -71,24 +73,25 @@ class Core(object):
         self.f_stop = True
 
     async def ping(self, user: User, f_udp=False):
+        uuid = random.randint(1000000000, 4294967295)
         try:
-            await asyncio.wait_for(user.event.wait(), 10.0)
-            user.event.clear()
-            await self.send_msg_body(msg_body=b'Ping', user=user, allow_udp=f_udp, f_pro_force=True)
-            await asyncio.wait_for(user.event.wait(), 5.0)
-            user.event.set()
+            # prepare Event
+            event = asyncio.Event()
+            self.ping_status[uuid] = event
+            # send ping
+            msg_body = b'Ping:' + str(uuid).encode()
+            await self.send_msg_body(msg_body=msg_body, user=user, allow_udp=f_udp, f_pro_force=True)
+            # wait for event set (5s)
+            await asyncio.wait_for(event.wait(), 5.0)
             return True
         except asyncio.TimeoutError:
             log.debug(f"failed to udp ping {user}")
-            user.event.set()
-            return False
         except ConnectionError as e:
             log.debug(f"socket error on ping by {e}")
-            user.event.set()
-            return False
         except Exception:
             log.error("ping exception", exc_info=True)
-            return False
+        # failed
+        return False
 
     def start(self, s_family=socket.AF_UNSPEC):
         assert s_family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNSPEC)
@@ -209,7 +212,6 @@ class Core(object):
             log.info(f"established connection as client to {new_user.header.name} {new_user.get_host_port()}")
             asyncio.ensure_future(self.receive_loop(new_user))
             # server port's reachable check
-            await asyncio.sleep(1.0)
             asyncio.ensure_future(self.check_reachable(new_user))
             return True
         except PeerToPeerError as e:
@@ -346,7 +348,6 @@ class Core(object):
             log.info(f"established connection as server from {new_user.header.name} {new_user.get_host_port()}")
             asyncio.ensure_future(self.receive_loop(new_user))
             # server port's reachable check
-            await asyncio.sleep(1.0)
             asyncio.ensure_future(self.check_reachable(new_user))
             return
         except (ConnectionAbortedError, ConnectionResetError) as e:
@@ -445,12 +446,15 @@ class Core(object):
                 self.traffic.put_traffic_down(msg_body)
                 msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
                 msg_body = zlib.decompress(msg_body)
-                if msg_body == b'Ping':
+                if msg_body.startswith(b'Ping:'):
+                    uuid_bytes = msg_body.split(b':')[1]
                     log.debug(f"receive Ping from {user.header.name}")
-                    await self.send_msg_body(b'Pong', user)
-                elif msg_body == b'Pong':
-                    log.debug(f"receive Pong from {user.header.name}")
-                    user.event.set()
+                    await self.send_msg_body(b'Pong:' + uuid_bytes, user)
+                elif msg_body.startswith(b'Pong:'):
+                    uuid_int = int(msg_body.decode().split(':')[1])
+                    if uuid_int in self.ping_status:
+                        log.debug(f"receive Pong from {user.header.name}")
+                        self.ping_status[uuid_int].set()
                 else:
                     await self.core_que.put((user, msg_body, time()))
                 f_raise_timeout = False
@@ -503,11 +507,11 @@ class Core(object):
             f_changed = False
             # reflect user status
             if f_tcp is not new_user.header.p2p_accept:
-                log.debug(f"{new_user} Update TCP accept status {new_user.header.p2p_accept}=>{f_tcp}")
+                # log.debug(f"{new_user} Update TCP accept status {new_user.header.p2p_accept}=>{f_tcp}")
                 new_user.header.p2p_accept = f_tcp
                 f_changed = True
             if f_udp is not new_user.header.p2p_udp_accept:
-                log.debug(f"{new_user} Update UDP accept status {new_user.header.p2p_udp_accept}=>{f_udp}")
+                # log.debug(f"{new_user} Update UDP accept status {new_user.header.p2p_udp_accept}=>{f_udp}")
                 new_user.header.p2p_udp_accept = f_udp
                 f_changed = True
             if f_changed:
@@ -558,11 +562,12 @@ async def udp_server_handle(msg, addr, core: Core):
             return
         core.traffic.put_traffic_down(msg_body)
         msg_body = AESCipher.decrypt(key=user.aeskey, enc=msg_body)
-        if msg_body == b'Ping':
-            log.info(f"get udp ping from {user.header.name} addr:{addr}")
-            await core.send_msg_body(msg_body=b'Pong', user=user)
+        if msg_body.startswith(b'Ping:'):
+            log.info(f"get udp ping from {user}")
+            uuid_bytes = msg_body.split(b':')[1]
+            await core.send_msg_body(msg_body=b'Pong:' + uuid_bytes, user=user)
         else:
-            log.debug(f"get udp packet from {user.header.name} addr:{addr}")
+            log.debug(f"get udp packet from {user}")
             await core.core_que.put((user, msg_body, time()))
     except ValueError as e:
         log.debug(f"maybe decrypt failed by {e} {msg_body}")

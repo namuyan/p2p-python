@@ -62,7 +62,6 @@ class User(object):
         "neers",  # ({host_port: header})  Neer clients info
         "score",  # (int )User score
         "warn",  # (int) User warning score
-        "event",  # (Event) user event object used for PingPong
         "create_time",  # (int) User object creation time
     )
 
@@ -78,7 +77,6 @@ class User(object):
         # user experience
         self.score = 0
         self.warn = 0
-        self.event = asyncio.Event()
         self.create_time = int(time())
 
     def __repr__(self):
@@ -87,8 +85,6 @@ class User(object):
         host_port = self.host_port[0] + ":" + str(self.header.p2p_port)
         if self.closed:
             status = 'close'
-        elif not self.event.is_set():
-            status = 'ping..'
         else:
             status = 'open'
         return f"<User {self.header.name} {status} {passed}/{age}m ({host_port}) {self.score}/{self.warn}>"
