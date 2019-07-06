@@ -488,21 +488,22 @@ class Core(object):
                     log.debug(f"user connection closed on check_reachable {new_user}")
                     return
                 await asyncio.sleep(1.0)
-            # try to check
+            # try to check TCP
             f_tcp = True
             host_port = new_user.get_host_port()
             af = socket.AF_INET if len(host_port) == 2 else socket.AF_INET6
             sock = socket.socket(af, socket.SOCK_STREAM)
-            sock.settimeout(5.0)
+            sock.settimeout(3.0)
             try:
                 future = loop.run_in_executor(None, sock.connect_ex, host_port)
-                await asyncio.wait_for(future, 60.0)
+                await asyncio.wait_for(future, 10.0)
                 result = future.result()
                 if result != 0:
                     f_tcp = False
-                sock.close()
             except OSError:
                 f_tcp = False
+            loop.run_in_executor(None, sock.close)
+            # try to check UDP
             f_udp = await self.ping(user=new_user, f_udp=True)
             f_changed = False
             # reflect user status
