@@ -344,7 +344,7 @@ class Peer2Peer(object):
         if f_timeout and user:
             if user.closed or not await self.core.ping(user):
                 # already closed or ping failed -> reconnect
-                await self.try_reconnect(user, reason="ping failed on send_command")
+                await self.core.try_reconnect(user, reason="ping failed on send_command")
             else:
                 log.debug("timeout and retry but ping success")
 
@@ -354,23 +354,6 @@ class Peer2Peer(object):
         else:
             future.cancel()
             raise asyncio.TimeoutError("timeout cmd")
-
-    async def try_reconnect(self, user: User, reason: str):
-        self.core.remove_connection(user, reason)
-        host_port = user.get_host_port()
-        if not user.header.p2p_accept:
-            return False
-        elif await self.core.create_connection(host=host_port[0], port=host_port[1]):
-            log.debug(f"reconnect success {user}")
-            new_user = self.core.host_port2user(host_port)
-            if new_user:
-                new_user.neers = user.neers
-                new_user.score = user.score
-                new_user.warn = user.warn
-            return True
-        else:
-            log.warning(f"reconnect failed {user}")
-            return False
 
     async def send_direct_cmd(self, cmd, data, user=None) -> (User, dict):
         if len(self.core.user) == 0:

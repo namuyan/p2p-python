@@ -58,21 +58,21 @@ class User(object):
         "_writer",  # (StreamWriter) TCP socket writer
         "host_port",  # ([str, int])  Interface used on our PC
         "aeskey",  # (str) Common key
-        "sock_type",  # (str) We are as server or client side
+        "direction",  # (str) We are as server or client side
         "neers",  # ({host_port: header})  Neer clients info
         "score",  # (int )User score
         "warn",  # (int) User warning score
         "create_time",  # (int) User object creation time
     )
 
-    def __init__(self, header, number, reader, writer, host_port, aeskey, sock_type):
+    def __init__(self, header, number, reader, writer, host_port, aeskey, direction):
         self.header: UserHeader = header
         self.number = number
         self._reader: StreamReader = reader
         self._writer: StreamWriter = writer
         self.host_port = host_port
         self.aeskey = aeskey
-        self.sock_type = sock_type
+        self.direction = direction
         self.neers: Dict[(str, int), UserHeader] = dict()
         # user experience
         self.score = 0
@@ -113,7 +113,7 @@ class User(object):
             'neers': {"{}:{}".format(*host_port): header.getinfo() for host_port, header in self.neers.items()},
             'number': self.number,
             'host_port': self.get_host_port(),
-            'sock_type': self.sock_type,
+            'direction': self.direction,
             'score': self.score,
             'warn': self.warn,
         }

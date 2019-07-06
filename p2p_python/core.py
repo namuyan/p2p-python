@@ -21,9 +21,9 @@ import socks
 import zlib
 
 
-# constant
-SERVER_SIDE = 'server'
-CLIENT_SIDE = 'client'
+# socket direction
+INBOUND = 'inbound'
+OUTBOUND = 'outbound'
 
 log = getLogger(__name__)
 loop = asyncio.get_event_loop()
@@ -195,7 +195,7 @@ class Core(object):
 
             # 6. generate new user
             user_header = UserHeader(**header)
-            new_user = User(user_header, self.number, reader, writer, host_port, aeskey, CLIENT_SIDE)
+            new_user = User(user_header, self.number, reader, writer, host_port, aeskey, OUTBOUND)
 
             # 7. check header
             if new_user.header.network_ver != V.NETWORK_VER:
@@ -301,7 +301,7 @@ class Core(object):
 
             # 3. generate new user
             user_header = UserHeader(**header)
-            new_user = User(user_header, self.number, reader, writer, host_port, AESCipher.create_key(), SERVER_SIDE)
+            new_user = User(user_header, self.number, reader, writer, host_port, AESCipher.create_key(), INBOUND)
             self.number += 1
             if new_user.header.name == V.SERVER_NAME:
                 raise ConnectionAbortedError('Same origin connection')
@@ -520,6 +520,25 @@ class Core(object):
         except Exception:
             log.error("check_reachable exception", exc_info=True)
 
+    async def try_reconnect(self, user: User, reason: str):
+        self.remove_connection(user, reason)
+        host_port = user.get_host_port()
+        if self.f_stop:
+            return False
+        elif not user.header.p2p_accept:
+            return False
+        elif await self.create_connection(host=host_port[0], port=host_port[1]):
+            log.debug(f"reconnect success {user}")
+            new_user = self.host_port2user(host_port)
+            if new_user:
+                new_user.neers = user.neers
+                new_user.score = user.score
+                new_user.warn = user.warn
+            return True
+        else:
+            log.warning(f"reconnect failed {user}")
+            return False
+
     def name2user(self, name) -> Optional[User]:
         for user in self.user:
             if user.header.name == name:
@@ -639,8 +658,8 @@ def setup_all_socket_server(core: Core, s_family):
 
 
 __all__ = [
-    "SERVER_SIDE",
-    "CLIENT_SIDE",
+    "INBOUND",
+    "OUTBOUND",
     "ban_address",
     "Core",
 ]
