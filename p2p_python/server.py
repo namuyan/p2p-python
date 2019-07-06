@@ -22,6 +22,7 @@ LOCAL_IP = get_localhost_ip()
 GLOBAL_IPV4 = get_global_ip()
 GLOBAL_IPV6 = get_global_ip_ipv6()
 STICKY_LIMIT = 2
+TIMEOUT = 10.0
 
 # Constant type
 T_REQUEST = 'request'
@@ -157,7 +158,7 @@ class Peer2Peer(object):
                 # already get broadcast data, only send ACK
                 future = self.broadcast_status[item['uuid']]
                 # send ACK after broadcast_check finish
-                await asyncio.wait_for(future, 10.0)
+                await asyncio.wait_for(future, TIMEOUT)
                 ack_status = future.result()
                 ack_list.append(user)
 
@@ -171,7 +172,8 @@ class Peer2Peer(object):
                 self.broadcast_status[item['uuid']] = future
                 # try to check broadcast data
                 if asyncio.iscoroutinefunction(self.broadcast_check):
-                    broadcast_result = await asyncio.wait_for(self.broadcast_check(user, item['data']), 10.0)
+                    broadcast_result = await asyncio.wait_for(
+                        self.broadcast_check(user, item['data']), TIMEOUT)
                 else:
                     broadcast_result = self.broadcast_check(user, item['data'])
                 # set broadcast result
@@ -207,16 +209,21 @@ class Peer2Peer(object):
         elif item['cmd'] == Peer2PeerCmd.CHECK_REACHABLE:
             try:
                 port = item['data']['port']
-            except Exception as e:
+            except Exception:
                 port = user.header.p2p_port
-            temperate['data'] = await is_reachable(host=user.host_port[0], port=port)
+            try:
+                temperate['data'] = await asyncio.wait_for(
+                    is_reachable(host=user.host_port[0], port=port), TIMEOUT)
+            except Exception:
+                temperate['data'] = False
             allows.append(user)
 
         elif item['cmd'] == Peer2PeerCmd.DIRECT_CMD:
             data = item['data']
             if self.event.have_event(data['cmd']):
                 allows.append(user)
-                temperate['data'] = await self.event.ignition(user, data['cmd'], data['data'])
+                temperate['data'] = await asyncio.wait_for(
+                    self.event.ignition(user, data['cmd'], data['data']), TIMEOUT)
         else:
             log.debug(f"not found request cmd '{item['cmd']}'")
 
@@ -328,7 +335,6 @@ class Peer2Peer(object):
                 log.debug("send_command exception", exc_info=True)
 
             # 5. will lost packet
-            f_retry = True
             log.debug(f"id={uuid}, will lost packet and retry")
 
         else:
@@ -507,7 +513,6 @@ async def auto_stabilize_network(
                                            x[0] not in sticky_peers,
                                            sorted_score))
                 if len(sorted_score) == 0:
-                    await asyncio.sleep(10)
                     continue
                 log.debug(f"join score {sorted_score}")
                 host_port, score = random.choice(sorted_score)

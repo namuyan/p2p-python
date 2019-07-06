@@ -84,22 +84,32 @@ def setup_tor_connection(proxy_host='127.0.0.1', port=9150, f_raise_error=True):
 
 
 async def is_reachable(host, port):
-    """check a port is opened"""
+    """check a port is opened, finish in 2s"""
     for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
         af, socktype, proto, canonname, host_port = res
         try:
             sock = socket.socket(af, socktype, proto)
         except OSError:
             continue
-        sock.settimeout(5.0)
+        sock.settimeout(2.0)
         future = loop.run_in_executor(None, sock.connect_ex, host_port)
-        await asyncio.wait_for(future, 20.0)
+        await asyncio.wait_for(future, 3.0)
         result = future.result()
-        sock.close()
+        loop.run_in_executor(None, sock.close)
         if result == 0:
             return True
     else:
         # create no connection
+        return False
+
+
+def is_unbind_port(port, family=socket.AF_INET, protocol=socket.SOCK_STREAM):
+    """check is bind port by server"""
+    try:
+        with socket.socket(family, protocol) as sock:
+            sock.bind(("127.0.0.1", port))
+        return True
+    except socket.error:
         return False
 
 
@@ -121,6 +131,7 @@ __all__ = [
     "get_version",
     "get_name",
     "is_reachable",
+    "is_unbind_port",
     "setup_tor_connection",
     "setup_p2p_params",
     "setup_logger",
