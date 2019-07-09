@@ -428,6 +428,9 @@ async def auto_stabilize_network(
                         else:
                             sticky_peers.add(host_port)
                     log.info(f"init connection num={len(p2p.core.user)}")
+                    # wait when disconnected from network
+                    if len(p2p.core.user) == 0:
+                        await asyncio.sleep(15.0)
                     continue
                 else:
                     log.info("no peer info and no connections, wait 5s")
