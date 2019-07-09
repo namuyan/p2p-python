@@ -85,8 +85,12 @@ def setup_tor_connection(proxy_host='127.0.0.1', port=9150, f_raise_error=True):
 
 async def is_reachable(host, port):
     """check a port is opened, finish in 2s"""
-    for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
-        af, socktype, proto, canonname, host_port = res
+    future = loop.run_in_executor(
+        None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    await asyncio.wait_for(future, 10.0)
+    if future.cancelled():
+        return False
+    for af, socktype, proto, canonname, host_port in future.result():
         try:
             sock = socket.socket(af, socktype, proto)
         except OSError:

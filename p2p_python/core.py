@@ -118,8 +118,14 @@ class Core(object):
     async def create_connection(self, host, port):
         if self.f_stop:
             return False
-        for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
-            af, socktype, proto, canonname, host_port = res
+        # get connection list
+        future = loop.run_in_executor(
+            None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        await asyncio.wait_for(future, 10.0)
+        if future.cancelled():
+            return False
+        # try to connect one by one
+        for af, socktype, proto, canonname, host_port in future.result():
             if host_port[0] in ban_address:
                 return False  # baned address
             try:
