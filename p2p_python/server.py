@@ -445,10 +445,8 @@ async def auto_stabilize_network(
                 update_user = p2p.core.user[count % len(p2p.core.user)]
                 _, item = await p2p.send_command(cmd=Peer2PeerCmd.GET_NEARS, user=update_user)
                 update_user.update_neers(item)
-
-            # peer list update (user)
-            for user in p2p.core.user:
-                p2p.peers.add(user)
+                # peer list update
+                p2p.peers.add(update_user)
 
             # Calculate score (高ければ優先度が高い)
             search = set(p2p.peers.keys())

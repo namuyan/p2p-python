@@ -90,7 +90,7 @@ loop.close()
 ```
 
 ## Documents
-* [about inner commands](doc/INNER_CMD.md)
+* [about inner commands](doc/COMMANDS.md)
 * [for debug](doc/FOR_DEBUG.md)
 * [how to work p2p-python? (OLD and JP)](https://ameblo.jp/namuyan/entry-12398575560.html)
 
