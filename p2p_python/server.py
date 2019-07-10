@@ -32,15 +32,7 @@ T_ACK = 'ack'
 # stabilize objects
 user_score: Dict[tuple, int] = dict()
 sticky_peers: Set[tuple] = set()
-ignore_peers = {
-    # ipv4
-    (GLOBAL_IPV4, V.P2P_PORT),
-    (LOCAL_IP, V.P2P_PORT),
-    ('127.0.0.1', V.P2P_PORT),
-    # ipv6
-    (GLOBAL_IPV6, V.P2P_PORT, 0, 0),
-    ('::1', V.P2P_PORT, 0, 0),
-}
+ignore_peers = set()
 
 
 class Peer2PeerCmd:
@@ -387,6 +379,17 @@ async def auto_stabilize_network(
         self_disconnect: (bool) stabilizer keep a number of connection same with listen/2.
             self disconnection avoid overflow backlog but will make unstable network.
     """
+    # update ignore peers
+    ignore_peers.update({
+        # ipv4
+        (GLOBAL_IPV4, V.P2P_PORT),
+        (LOCAL_IP, V.P2P_PORT),
+        ('127.0.0.1', V.P2P_PORT),
+        # ipv6
+        (GLOBAL_IPV6, V.P2P_PORT, 0, 0),
+        ('::1', V.P2P_PORT, 0, 0),
+    })
+
     # wait for P2P running
     while not p2p.f_running:
         await asyncio.sleep(1.0)
