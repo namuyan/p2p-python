@@ -306,9 +306,22 @@ class Peer2Peer(object):
         future = asyncio.Future()
         self.result_futures[uuid] = future
 
+        # get best timeout
+        if user is None:
+            # broadcast-cmd
+            best_timeout = timeout / retry
+        else:
+            # inner-cmd/direct-cmd
+            average = user.average_process_time()
+            if average is None:
+                best_timeout = timeout / retry
+            else:
+                best_timeout = min(5.0, max(1.0, average * 10))
+
         f_timeout = False
         for _ in range(retry):
             send_num = await self._send_many_users(item=temperate, allows=allows, denys=[], allow_udp=f_udp)
+            send_time = time()
             if send_num == 0:
                 raise PeerToPeerError(f"We try to send no users? {len(self.core.user)}user connected")
             if Debug.P_SEND_RECEIVE_DETAIL:
@@ -317,9 +330,11 @@ class Peer2Peer(object):
             # 4. Get response
             try:
                 # avoid future canceled by wait_for
-                await asyncio.wait_for(asyncio.shield(future), timeout / retry)
+                await asyncio.wait_for(asyncio.shield(future), best_timeout)
                 if 5.0 < time() - start:
                     log.debug(f"id={uuid}, command {int(time()-start)}s blocked by {user}")
+                if user is not None:
+                    user.process_time.append(time() - send_time)
                 break
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 log.debug(f"id={uuid}, timeout now, cmd({cmd}) to {user}")

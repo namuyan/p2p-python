@@ -2,6 +2,7 @@ from asyncio.streams import StreamReader, StreamWriter
 from logging import getLogger
 from time import time
 from typing import Dict
+from collections import deque
 import asyncio
 
 
@@ -63,6 +64,7 @@ class User(object):
         "score",  # (int )User score
         "warn",  # (int) User warning score
         "create_time",  # (int) User object creation time
+        "process_time",  # list of time used for process
     )
 
     def __init__(self, header, number, reader, writer, host_port, aeskey, direction):
@@ -78,6 +80,7 @@ class User(object):
         self.score = 0
         self.warn = 0
         self.create_time = int(time())
+        self.process_time = deque(maxlen=10)
 
     def __repr__(self):
         age = (int(time()) - self.header.start_time) // 60
@@ -109,13 +112,15 @@ class User(object):
 
     def getinfo(self):
         return {
-            'header': self.header.getinfo(),
-            'neers': {"{}:{}".format(*host_port): header.getinfo() for host_port, header in self.neers.items()},
             'number': self.number,
-            'host_port': self.get_host_port(),
+            'object': repr(self),
+            'header': self.header.getinfo(),
+            'neers': [stringify_host_port(*host_port) for host_port in self.neers.keys()],
+            'host_port': stringify_host_port(*self.get_host_port()),
             'direction': self.direction,
             'score': self.score,
             'warn': self.warn,
+            'average_process_time': self.average_process_time(),
         }
 
     def get_host_port(self) -> tuple:
@@ -128,6 +133,21 @@ class User(object):
         # [[(host,port), header],..]
         for host_port, header in items:
             self.neers[tuple(host_port)] = UserHeader(**header)
+
+    def average_process_time(self):
+        if len(self.process_time) == 0:
+            return None
+        else:
+            return sum(self.process_time) / len(self.process_time)
+
+
+def stringify_host_port(*args):
+    if len(args) == 2:
+        return "{}:{}".format(args[0], args[1])
+    elif len(args) == 4:
+        return "[{}]:{}".format(args[0], args[1])
+    else:
+        return str(args)
 
 
 __all__ = [
