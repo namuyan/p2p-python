@@ -61,8 +61,8 @@ class Peer2Peer(object):
         self.event = EventIgnition()  # DirectCmdを受け付ける窓口
 
         # data status control
-        self.broadcast_status: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=900)
-        self.result_futures: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=900)
+        self.broadcast_status: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=90)
+        self.result_futures: Dict[int, asyncio.Future] = ExpiringDict(max_len=5000, max_age_seconds=90)
 
         # recode traffic if f_debug true
         if Debug.F_RECODE_TRAFFIC:
