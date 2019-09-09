@@ -29,11 +29,23 @@ def get_version():
     """get program version string"""
     if Debug.P_PRINT_EXCEPTION:
         return 'debug'
-    hear = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(hear, '__init__.py'), mode='r') as fp:
-        for word in fp.readlines():
-            if word.startswith('__version__'):
-                return word.replace('"', "'").split("'")[-2]
+
+    # read version from code
+    try:
+        from p2p_python import __version__
+        return __version__
+    except Exception:
+        pass
+
+    # read version from file
+    try:
+        hear = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(hear, '__init__.py'), mode='r') as fp:
+            for word in fp.readlines():
+                if word.startswith('__version__'):
+                    return word.replace('"', "'").split("'")[-2]
+    except Exception:
+        pass
     return 'unknown'
 
 
