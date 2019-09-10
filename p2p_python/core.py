@@ -121,8 +121,9 @@ class Core(object):
         # get connection list
         future = loop.run_in_executor(
             None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        await asyncio.wait_for(future, 10.0)
-        if future.cancelled():
+        try:
+            await asyncio.wait_for(future, 10.0)
+        except socket.gaierror:
             return False
         # try to connect one by one
         for af, socktype, proto, canonname, host_port in future.result():

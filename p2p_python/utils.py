@@ -99,8 +99,9 @@ async def is_reachable(host, port):
     """check a port is opened, finish in 2s"""
     future = loop.run_in_executor(
         None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    await asyncio.wait_for(future, 10.0)
-    if future.cancelled():
+    try:
+        await asyncio.wait_for(future, 10.0)
+    except socket.gaierror:
         return False
     for af, socktype, proto, canonname, host_port in future.result():
         try:
