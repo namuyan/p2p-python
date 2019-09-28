@@ -420,11 +420,16 @@ async def auto_stabilize_network(
     while p2p.f_running:
         count += 1
 
-        # wait
+        # decide wait time
         if len(p2p.core.user) <= need_connection:
-            await asyncio.sleep(3.0)
+            wait_time = 3.0
         else:
-            await asyncio.sleep(4.0 * (4.5 + random.random()))  # wait 18s~20s
+            wait_time = 4.0 * (4.5 + random.random())  # wait 18s~20s
+
+        # waiting
+        while p2p.f_running and 0.0 < wait_time:
+            await asyncio.sleep(0.1)
+            wait_time -= 0.1
 
         # clear sticky
         if count % 13 == 0 and len(sticky_peers) > 0:
@@ -448,12 +453,15 @@ async def auto_stabilize_network(
                     log.info(f"init connection num={len(p2p.core.user)}")
                     # wait when disconnected from network
                     if len(p2p.core.user) == 0:
-                        await asyncio.sleep(15.0)
-                    continue
+                        wait_time = 15.0
                 else:
                     log.info("no peer info and no connections, wait 5s")
-                    await asyncio.sleep(5.0)
-                    continue
+                    wait_time = 5.0
+
+                # waiting if required
+                while p2p.f_running and 0.0 < wait_time:
+                    await asyncio.sleep(0.1)
+                    wait_time -= 0.1
 
             # update 1 user's neer info one by one
             if 0 < len(p2p.core.user):
@@ -543,7 +551,7 @@ async def auto_stabilize_network(
             log.debug(f"Peer2PeerError: {str(e)}")
         except Exception:
             log.debug("stabilize exception", exc_info=True)
-    log.error("auto stabilization closed")
+    log.info("auto stabilize closed")
 
 
 __all__ = [

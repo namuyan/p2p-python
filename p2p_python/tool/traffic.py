@@ -29,7 +29,11 @@ class Traffic(object):
         count = 0
         while True:
             try:
-                await asyncio.sleep(self.span)
+                wait_time = self.span
+                while not self.f_stop and 0.0 < wait_time:
+                    await asyncio.sleep(0.5)
+                    wait_time -= 0.5
+
                 count += 1
                 ntime, up, down = int(time.time()), sum(self.traffic_up), sum(self.traffic_down)
                 self.data.append((ntime, up, down))
