@@ -95,6 +95,14 @@ def setup_tor_connection(proxy_host='127.0.0.1', port=9150, f_raise_error=True):
     sock.close()
 
 
+def setup_server_hostname(hostname: str = None):
+    """
+    hostname displayed for others
+    This is useful when proxy provide different ip address
+    """
+    V.MY_HOST_NAME = hostname
+
+
 async def is_reachable(host, port):
     """check a port is opened, finish in 2s"""
     future = loop.run_in_executor(
@@ -147,6 +155,7 @@ __all__ = [
     "NAMES",
     "get_version",
     "get_name",
+    "setup_server_hostname",
     "is_reachable",
     "is_unbind_port",
     "setup_tor_connection",

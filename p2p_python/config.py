@@ -14,6 +14,7 @@ class V:
 
     # setting
     TOR_CONNECTION = None  # proxy (host, port)
+    MY_HOST_NAME = None  # optional: example.com
 
 
 class Debug:

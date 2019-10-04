@@ -108,6 +108,7 @@ class Core(object):
             'name': V.SERVER_NAME,
             'client_ver': V.CLIENT_VER,
             'network_ver': V.NETWORK_VER,
+            'my_host_name': V.MY_HOST_NAME,
             'p2p_accept': V.P2P_ACCEPT,
             'p2p_udp_accept': V.P2P_UDP_ACCEPT,
             'p2p_port': V.P2P_PORT,

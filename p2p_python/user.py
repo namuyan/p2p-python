@@ -15,6 +15,7 @@ class UserHeader(object):
         "name",  # (str) Name randomly chosen by name_list.txt
         "client_ver",  # (str) __version__ of __init__.py
         "network_ver",  # (int) Random number assigned to each P2P net
+        "my_host_name",  # (str) user's optional hostname (higher priority than peername)
         "p2p_accept",  # (bool) flag of accept TCP connection
         "p2p_udp_accept",  # (bool) flag of accept UDP packet
         "p2p_port",  # (int) P2P port
@@ -26,6 +27,7 @@ class UserHeader(object):
         self.name: str = kwargs['name']
         self.client_ver: int = kwargs['client_ver']
         self.network_ver: int = kwargs['network_ver']
+        self.my_host_name: str = kwargs.get('my_host_name')
         self.p2p_accept: bool = kwargs['p2p_accept']
         self.p2p_udp_accept: bool = kwargs['p2p_udp_accept']
         self.p2p_port: int = kwargs['p2p_port']
@@ -40,6 +42,7 @@ class UserHeader(object):
             'name': self.name,
             'client_ver': self.client_ver,
             'network_ver': self.network_ver,
+            'my_host_name': self.my_host_name,
             'p2p_accept': self.p2p_accept,
             'p2p_udp_accept': self.p2p_udp_accept,
             'p2p_port': self.p2p_port,
@@ -126,6 +129,8 @@ class User(object):
     def get_host_port(self) -> tuple:
         # connection先
         host_port = list(self.host_port)
+        if self.header.my_host_name:
+            host_port[0] = self.header.my_host_name
         host_port[1] = self.header.p2p_port
         return tuple(host_port)
 
