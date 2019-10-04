@@ -54,7 +54,7 @@ def get_name():
     return "{}:{}".format(random.choice(NAMES), random.randint(10000, 99999))
 
 
-def setup_p2p_params(network_ver, p2p_port, p2p_accept=True, p2p_udp_accept=True, sub_dir=None):
+def setup_p2p_params(network_ver, p2p_port, p2p_accept=False, p2p_udp_accept=False, sub_dir=None):
     """ setup general connection setting """
     # directory params
     if V.DATA_PATH is not None:
