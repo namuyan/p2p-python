@@ -105,7 +105,7 @@ def setup_server_hostname(hostname: str = None):
 
 async def is_reachable(host, port):
     """check a port is opened, finish in 2s"""
-    future = loop.run_in_executor(
+    future: asyncio.Future = loop.run_in_executor(
         None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
     try:
         await asyncio.wait_for(future, 10.0)
@@ -117,7 +117,8 @@ async def is_reachable(host, port):
         except OSError:
             continue
         sock.settimeout(2.0)
-        future = loop.run_in_executor(None, sock.connect_ex, host_port)
+        future: asyncio.Future = loop.run_in_executor(
+            None, sock.connect_ex, host_port)
         await asyncio.wait_for(future, 3.0)
         result = future.result()
         loop.run_in_executor(None, sock.close)

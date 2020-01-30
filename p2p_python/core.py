@@ -120,7 +120,7 @@ class Core(object):
         if self.f_stop:
             return False
         # get connection list
-        future = loop.run_in_executor(
+        future: asyncio.Future = loop.run_in_executor(
             None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
         try:
             await asyncio.wait_for(future, 10.0)
@@ -138,7 +138,8 @@ class Core(object):
                     sock.setproxy(socks.PROXY_TYPE_SOCKS5, V.TOR_CONNECTION[0], V.TOR_CONNECTION[1])
                 else:
                     sock = socket.socket(af, socktype, proto)
-                future = loop.run_in_executor(None, sock.connect, host_port)
+                future: asyncio.Future = loop.run_in_executor(
+                    None, sock.connect, host_port)
                 await asyncio.wait_for(future, 10.0)
                 future.result()  # raised exception of socket
                 sock.setblocking(False)
@@ -503,7 +504,8 @@ class Core(object):
             sock = socket.socket(af, socket.SOCK_STREAM)
             sock.settimeout(3.0)
             try:
-                future = loop.run_in_executor(None, sock.connect_ex, host_port)
+                future: asyncio.Future = loop.run_in_executor(
+                    None, sock.connect_ex, host_port)
                 await asyncio.wait_for(future, 10.0)
                 result = future.result()
                 if result != 0:
