@@ -276,6 +276,10 @@ class Peer2Peer(object):
 
     async def send_command(self, cmd, data=None, user=None, timeout=10.0, retry=2) -> (User, dict):
         assert 0.0 < timeout and 0 < retry
+
+        if self.f_stop:
+            raise PeerToPeerError('already p2p-python closed')
+
         uuid = random.randint(10, 0xffffffff)
         # 1. Make template
         temperate = {
