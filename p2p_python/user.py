@@ -86,14 +86,14 @@ class User(object):
         self.process_time = deque(maxlen=10)
 
     def __repr__(self):
-        age = (int(time()) - self.header.start_time) // 60
-        passed = (int(time()) - self.create_time) // 60
+        age = time2string(time() - self.header.start_time)
+        passed = time2string(time() - self.create_time)
         host_port = self.host_port[0] + ":" + str(self.header.p2p_port)
         if self.closed:
             status = 'close'
         else:
             status = 'open'
-        return f"<User {self.header.name} {status} {passed}/{age}m ({host_port}) {self.score}/{self.warn}>"
+        return f"<User {self.header.name} {status} {passed}/{age} ({host_port}) {self.score}/{self.warn}>"
 
     def __del__(self):
         self.close()
@@ -153,6 +153,17 @@ def stringify_host_port(*args):
         return "[{}]:{}".format(args[0], args[1])
     else:
         return str(args)
+
+
+def time2string(ntime: float) -> str:
+    if ntime < 120.0:  # 2m
+        return str(round(ntime, 1)) + "s"
+    elif ntime < 7200.0:  # 2h
+        return str(round(ntime/60.0, 1)) + "m"
+    elif ntime < 172800.0:  # 2d
+        return str(round(ntime/3600.0, 1)) + "h"
+    else:
+        return str(round(ntime/86400.0, 1)) + "d"
 
 
 __all__ = [
