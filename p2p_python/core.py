@@ -116,7 +116,8 @@ class Core(object):
             'last_seen': int(time()),
         }
 
-    async def create_connection(self, host, port):
+    async def create_connection(self, host, port) -> bool:
+        """create connection without exception"""
         if self.f_stop:
             return False
         # get connection list
@@ -124,10 +125,11 @@ class Core(object):
             None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
         try:
             await asyncio.wait_for(future, 10.0)
-        except socket.gaierror:
+            address_infos = future.result()
+        except (asyncio.TimeoutError, socket.gaierror):
             return False
         # try to connect one by one
-        for af, socktype, proto, canonname, host_port in future.result():
+        for af, socktype, proto, canonname, host_port in address_infos:
             if host_port[0] in ban_address:
                 return False  # baned address
             try:
@@ -510,7 +512,7 @@ class Core(object):
                 result = future.result()
                 if result != 0:
                     f_tcp = False
-            except OSError:
+            except (OSError, asyncio.TimeoutError):
                 f_tcp = False
             loop.run_in_executor(None, sock.close)
             # try to check UDP

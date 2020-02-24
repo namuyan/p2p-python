@@ -109,9 +109,10 @@ async def is_reachable(host, port):
         None, socket.getaddrinfo, host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
     try:
         await asyncio.wait_for(future, 10.0)
-    except socket.gaierror:
+        addrs = future.result()
+    except (socket.gaierror, asyncio.TimeoutError):
         return False
-    for af, socktype, proto, canonname, host_port in future.result():
+    for af, socktype, proto, canonname, host_port in addrs:
         try:
             sock = socket.socket(af, socktype, proto)
         except OSError:
