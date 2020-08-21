@@ -3,6 +3,9 @@ p2p-python
 I seek a library that can make a simple P2P network.  
 This library enables you create P2P application.
 
+## IMPORTANT
+**THIS IS OLD, newly rewritten version 4.0.0 will be released.**
+
 ## Specification
 * Asynchronous IO
 * Pure Python code
