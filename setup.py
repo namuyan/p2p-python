@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 import os
 
 try:
-    with open('README.md') as f:
+    with open('README-v3.md') as f:
         readme = f.read()
 except (IOError, UnicodeError):
     readme = ''

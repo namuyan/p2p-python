@@ -1,0 +1,15 @@
+language: python
+python:
+  - 3.6
+  - 3.7
+  - 3.8
+
+install:
+  - pip3 install --upgrade pip
+  - pip3 install -r requirements.txt
+  - pip3 install mypy
+  - pip3 install nose
+
+script:
+  - python3 -m mypy --config-file=mypy.ini srudp tests
+  - python3 -m nose -v tests\base.py
