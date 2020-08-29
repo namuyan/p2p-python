@@ -341,9 +341,13 @@ class Peer2Peer(object):
         try:
 
             # 1. receive work result
-            if cmd == InnerCmd.RESPONSE_SUCCESS:
+            if cmd == InnerCmd.RESPONSE_PROCESSING:
+                # response: processing work now (result will be sent)
+                log.warning(f"{sock} says that PROCESSING work now uuid={uuid_int}")
+                return
+            elif cmd == InnerCmd.RESPONSE_SUCCESS:
                 # response: success
-                assert uuid_int in self.results
+                assert uuid_int in self.results, ("unknown uuid", uuid_int)
                 future = self.results[uuid_int]
                 if future.done():
                     self.score_down(sock)
@@ -353,7 +357,7 @@ class Peer2Peer(object):
                 return
             elif cmd == InnerCmd.RESPONSE_FAILED:
                 # response: failed
-                assert uuid_int in self.results
+                assert uuid_int in self.results, ("unknown uuid", uuid_int)
                 future = self.results[uuid_int]
                 if future.done():
                     log.debug(f"duplicated receive msg (failed) uuid={uuid_int} body={body!r}")
@@ -366,9 +370,14 @@ class Peer2Peer(object):
 
             # 2. check already requested work
             if uuid_int in self.works:
-                # or resend result (or timeout)
+                # already known uuid
                 result_fut = self.works[uuid_int]
-                sock.sendall(result_fut.result(20.0))
+                # resend result again or notify PROCESSING flag
+                if result_fut.done():
+                    sock.sendall(result_fut.result())
+                else:
+                    sock.sendall(_PROCESSING + uuid_bytes + DUMMY_MSG)
+                log.debug(f"{sock} will be unstable because same request received uuid={uuid_int}")
                 return
             else:
                 result_fut = self.works[uuid_int] = Future()
