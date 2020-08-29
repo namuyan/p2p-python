@@ -3,7 +3,7 @@ from p2p_python.peer import Peer
 from p2p_python.sockpool import *
 from srudp import SecureReliableSocket
 from ecdsa.keys import VerifyingKey
-from typing import TYPE_CHECKING, Tuple, Union, Callable
+from typing import TYPE_CHECKING, List, Tuple, Union, Callable
 from ipaddress import ip_address
 from io import BytesIO
 import socket as s
@@ -18,24 +18,46 @@ if TYPE_CHECKING:
     from p2p_python.peer2peer import Peer2Peer
 
 
+def ask_neers_cmd_decoder(body: bytes) -> List[PeerInfo]:
+    io = BytesIO(body)
+    peers = list()
+    while io.tell() < len(io.getbuffer()):
+        peers.append(PeerInfo.from_bytes(io))
+    assert len(io.getbuffer()) == io.tell(), (len(io.getbuffer()), io.tell())
+    return peers
+
+
+def ask_neers_thread(_res_fnc: _ResponseFuc, _body: bytes, _sock: Sock, p2p: 'Peer2Peer') -> bytes:
+    """
+    get all peer info connected specified a peer
+
+    * input: None
+    * output: PeerInfo + PeerInfo + ...
+    """
+    io = BytesIO()
+    for peer in p2p.peers:
+        peer.info.to_bytes(io)
+    return io.getvalue()
+
+
 def mediator_cmd_encoder(
         issuer_info: PeerInfo,
         issuer_addr: FormalAddr,
         dest_pubkey: VerifyingKey) -> bytes:
-    issuer_info_bytes = issuer_info.to_bytes()
-    issuer_addr_bytes = issuer_addr.to_bytes()
+    io = BytesIO()
+    issuer_info.to_bytes(io)
+    issuer_addr.to_bytes(io)
     dest_pubkey_bytes: bytes = dest_pubkey.to_string()
-    return len(issuer_info_bytes).to_bytes(4, "big") + issuer_info_bytes \
-        + len(issuer_addr_bytes).to_bytes(4, "big") + issuer_addr_bytes \
-        + len(dest_pubkey_bytes).to_bytes(4, "big") + dest_pubkey_bytes
+    io.write(len(dest_pubkey_bytes).to_bytes(4, "big"))
+    io.write(dest_pubkey_bytes)
+    return io.getvalue()
 
 
 def mediator_cmd_decoder(body: bytes) -> Tuple[PeerInfo, FormalAddr]:
     io = BytesIO(body)
-    length = int.from_bytes(io.read(4), "big")
-    info = PeerInfo.from_bytes(io.read(length))
-    length = int.from_bytes(io.read(4), "big")
-    addr = FormalAddr.from_bytes(io.read(length))
+    info = PeerInfo.from_bytes(io)
+    addr = FormalAddr.from_bytes(io)
+    assert len(io.getbuffer()) == io.tell(), (len(io.getbuffer()), io.tell())
     return info, addr
 
 
@@ -55,12 +77,11 @@ def mediator_thread(res_fnc: _ResponseFuc, body: bytes, sock: Sock, p2p: 'Peer2P
 
         # decode
         io = BytesIO(body)
-        length = int.from_bytes(io.read(4), "big")
-        issuer_info = PeerInfo.from_bytes(io.read(length))
-        length = int.from_bytes(io.read(4), "big")
-        issuer_addr = FormalAddr.from_bytes(io.read(length))
+        issuer_info = PeerInfo.from_bytes(io)
+        issuer_addr = FormalAddr.from_bytes(io)
         length = int.from_bytes(io.read(4), "big")
         dest_pubkey = VerifyingKey.from_string(io.read(length), curve=CURVE)
+        assert len(io.getbuffer()) == io.tell(), (len(io.getbuffer()), io.tell())
 
         # find destination
         for dest_peer in p2p.peers:
@@ -92,18 +113,17 @@ def mediator_thread(res_fnc: _ResponseFuc, body: bytes, sock: Sock, p2p: 'Peer2P
 
 
 def ask_srudp_cmd_encoder(issuer_info: PeerInfo, issuer_addr: FormalAddr) -> bytes:
-    info_bytes = issuer_info.to_bytes()
-    addr_bytes = issuer_addr.to_bytes()
-    return len(info_bytes).to_bytes(4, "big") + info_bytes \
-        + len(addr_bytes).to_bytes(4, "big") + addr_bytes
+    io = BytesIO()
+    issuer_info.to_bytes(io)
+    issuer_addr.to_bytes(io)
+    return io.getvalue()
 
 
 def ask_srudp_cmd_decoder(body: bytes) -> Tuple[PeerInfo, FormalAddr]:
     io = BytesIO(body)
-    length = int.from_bytes(io.read(4), "big")
-    info = PeerInfo.from_bytes(io.read(length))
-    length = int.from_bytes(io.read(4), "big")
-    addr = FormalAddr.from_bytes(io.read(length))
+    info = PeerInfo.from_bytes(io)
+    addr = FormalAddr.from_bytes(io)
+    assert len(io.getbuffer()) == io.tell(), (len(io.getbuffer()), io.tell())
     return info, addr
 
 
@@ -121,10 +141,8 @@ def ask_srudp_thread(res_fnc: _ResponseFuc, body: bytes, sock: Sock, p2p: 'Peer2
 
         # decode
         io = BytesIO(body)
-        length = int.from_bytes(io.read(4), "big")
-        issuer_info = PeerInfo.from_bytes(io.read(length))
-        length = int.from_bytes(io.read(4), "big")
-        issuer_addr = FormalAddr.from_bytes(io.read(length))
+        issuer_info = PeerInfo.from_bytes(io)
+        issuer_addr = FormalAddr.from_bytes(io)
 
         # find my address (destination)
         for address in p2p.my_info.addresses:
@@ -146,11 +164,10 @@ def ask_srudp_thread(res_fnc: _ResponseFuc, body: bytes, sock: Sock, p2p: 'Peer2
             fut = executor.submit(new_sock.connect, issuer_addr)
 
         # return response
-        dest_info_bytes = p2p.my_info.to_bytes()
-        dest_addr_bytes = dest_addr.to_bytes()
-        body = len(dest_info_bytes).to_bytes(4, "big") + dest_info_bytes \
-            + len(dest_addr_bytes).to_bytes(4, "big") + dest_addr_bytes
-        res_fnc(_SUCCESS, body)
+        io = BytesIO()
+        p2p.my_info.to_bytes(io)
+        dest_addr.to_bytes(io)
+        res_fnc(_SUCCESS, io.getvalue())
 
         # wait for srudp connect success
         fut.result(20.0)
@@ -196,10 +213,12 @@ def ask_srudp_thread(res_fnc: _ResponseFuc, body: bytes, sock: Sock, p2p: 'Peer2
 
 __all__ = [
     "DUMMY_MSG",
+    "ask_neers_cmd_decoder",
     "mediator_cmd_encoder",
     "mediator_cmd_decoder",
     "ask_srudp_cmd_encoder",
     "ask_srudp_cmd_decoder",
+    "ask_neers_thread",
     "mediator_thread",
     "ask_srudp_thread",
 ]

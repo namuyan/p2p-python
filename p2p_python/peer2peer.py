@@ -11,6 +11,7 @@ from ecdsa.keys import VerifyingKey
 from time import time
 from random import choice
 from enum import IntEnum
+from io import BytesIO
 from srudp import SecureReliableSocket
 from socket import socket
 import socket as s
@@ -105,7 +106,8 @@ class Peer2Peer(object):
         duplicated_cmds = set(commands) & set(InnerCmd)
         assert len(duplicated_cmds) == 0, ("duplicated cmds not allowed", duplicated_cmds)
         self.commands.update({
-            InnerCmd.REQUEST_PEER_INFO: lambda _fnc, _body, _sock, p2p: p2p.my_info.to_bytes(),
+            InnerCmd.REQUEST_ASK_NEERS: ask_neers_thread,
+            InnerCmd.REQUEST_PEER_INFO: lambda _f, _b, _s, p2p: p2p.my_info.to_bytes(BytesIO()).tobytes(),
             InnerCmd.REQUEST_MEDIATOR: mediator_thread,
             InnerCmd.REQUEST_ASK_SRUDP: ask_srudp_thread,
         })
@@ -282,7 +284,7 @@ class Peer2Peer(object):
 
         # update peer info
         response, _sock = self.throw_command(peer, InnerCmd.REQUEST_PEER_INFO, DUMMY_MSG)
-        peer.info = PeerInfo.from_bytes(response)
+        peer.info = PeerInfo.from_bytes(BytesIO(response))
 
         # success
         return peer
@@ -442,7 +444,7 @@ class Peer2Peer(object):
                 # update peer info
                 assert sock in pool.socks, (sock, pool.socks)
                 response, _sock = self.throw_command(new_peer, InnerCmd.REQUEST_PEER_INFO, DUMMY_MSG)
-                new_peer.info = PeerInfo.from_bytes(response)
+                new_peer.info = PeerInfo.from_bytes(BytesIO(response))
                 log.debug(f"accept {new_peer}")
 
             else:

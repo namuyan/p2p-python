@@ -14,6 +14,7 @@ from binascii import a2b_hex
 from socket import AddressFamily
 from threading import Lock
 from enum import IntEnum
+from io import BytesIO
 import json
 import os
 
@@ -37,6 +38,7 @@ executor = ThreadPoolExecutor(20, thread_name_prefix="Ex")
 class InnerCmd(IntEnum):
     """don't overwrite this cmd id"""
     # peer control cmd
+    REQUEST_ASK_NEERS = 0xf9  # 249
     REQUEST_PEER_INFO = 0xfa  # 250
 
     # connection relay cmd
@@ -63,9 +65,11 @@ class FormalAddr(NamedTuple):
         return self.to_string()
 
     @classmethod
-    def from_bytes(cls, b: bytes) -> 'FormalAddr':
-        port = int.from_bytes(b[:4], "big")
-        host = ip_address(b[4:])
+    def from_bytes(cls, io: BytesIO) -> 'FormalAddr':
+        """[port int 4b][host_len 4b][host 4-16b]"""
+        port = int.from_bytes(io.read(4), "big")
+        host_len = int.from_bytes(io.read(4), "big")
+        host = ip_address(io.read(host_len))
         return FormalAddr(host, port)
 
     @classmethod
@@ -83,10 +87,12 @@ class FormalAddr(NamedTuple):
         host_str, port_str = s.rsplit(":", 1)
         return FormalAddr(ip_address(host_str.lstrip("[").rstrip("]")), int(port_str))
 
-    def to_bytes(self) -> bytes:
+    def to_bytes(self, io: BytesIO) -> memoryview:
+        io.write(self.port.to_bytes(4, "big"))
         host_bytes = self.host.packed
-        port_bytes = self.port.to_bytes(4, "big")
-        return port_bytes + host_bytes
+        io.write(len(host_bytes).to_bytes(4, "big"))
+        io.write(host_bytes)
+        return io.getbuffer()
 
     def to_address(self) -> _Address:
         if self.host.version == 4:
@@ -112,17 +118,21 @@ class PeerInfo(NamedTuple):
     tcp_server: bool
     srudp_bound: bool
 
-    def to_bytes(self) -> bytes:
-        return json.dumps({
+    def to_bytes(self, io: BytesIO) -> memoryview:
+        data = json.dumps({
             "addresses": [addr.to_string() for addr in self.addresses],
             "public_key": self.public_key.to_string().hex(),
             "tcp_server": self.tcp_server,
             "srudp_bound": self.srudp_bound,
         }).encode()
+        io.write(len(data).to_bytes(4, "big"))
+        io.write(data)
+        return io.getbuffer()
 
     @classmethod
-    def from_bytes(cls, b: bytes) -> 'PeerInfo':
-        obj: _Dict = json.loads(b.decode())
+    def from_bytes(cls, io: BytesIO) -> 'PeerInfo':
+        length = int.from_bytes(io.read(4), "big")
+        obj: _Dict = json.loads(io.read(length))
         addresses = [FormalAddr.from_string(addr) for addr in obj["addresses"]]
         pubkey_bytes = a2b_hex(obj["public_key"])
         public_key = VerifyingKey.from_string(pubkey_bytes, curve=CURVE)

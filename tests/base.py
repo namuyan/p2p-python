@@ -37,6 +37,8 @@ class TestCmd(IntEnum):
 
 def test_sock() -> None:
     """
+    low-level layer sockpool test
+
     1. setup pool_a and pool_b.
     2. pool_a is server and pool_b is client.
     3. connect, encrypt, validate and measure delay.
@@ -75,14 +77,7 @@ def test_sock() -> None:
     # encryption
     client = pool_a.socks[1]
     log.info("sock_a %s", client)
-    count = 10
-    while client.establish_encryption(True).wait(3.0) is False:
-        if client.flags & SockControl.ENCRYPTED:
-            break
-        else:
-            log.warning("retry.. %d %s", time(), client)
-        count -= 1
-        assert 0 < count
+    assert client.establish_encryption(True).wait(20.0)
     log.info("success encryption %s", client)
 
     log.info("step 4")
@@ -93,14 +88,7 @@ def test_sock() -> None:
 
     # validation the other
     log.info("sock_a %s", client)
-    count = 10
-    while client.validate_the_other(True).wait(3.0) is False:
-        if client.flags & SockControl.VALIDATED:
-            break
-        else:
-            log.warning("retry.. %d %s", time(), client)
-        count -= 1
-        assert 0 < count
+    assert client.validate_the_other(True).wait(20.0)
     log.info("success validation %s", client)
     assert client.flags & SockControl.VALIDATED
 
@@ -110,14 +98,7 @@ def test_sock() -> None:
     log.info("step 5")
 
     # measure delay time
-    count = 10
-    while client.measure_delay_time(True).wait(3.0) is False:
-        if client.stable.is_set():
-            break
-        else:
-            log.warning("retry.. %d %s", time(), client)
-        count -= 1
-        assert 0 < count
+    assert client.measure_delay_time(True).wait(20.0)
     log.info("success measure delay %f", client.delay)
     assert client.stable.wait(20.0)
 
@@ -129,6 +110,8 @@ def test_sock() -> None:
 
 def test_peer2peer() -> None:
     """
+    p2p class basic test
+
     1. setup p2p_a and p2p_b
     2. p2p_a is server and p2p_b is client
     3. p2p_a connect p2p_b by TCP
@@ -184,6 +167,8 @@ def test_peer2peer() -> None:
 
 def test_relay_connect() -> None:
     """
+    p2p's relay connect test
+
     1. setup A, B, C and connect A with B and B with C.
     2. A connects to C via B by srudp.
     3. request PEER_INFO cmd
@@ -221,6 +206,9 @@ def test_relay_connect() -> None:
 
     # send
     response, sock = p2p_a.throw_command(peer_a_c, InnerCmd.REQUEST_PEER_INFO, b"{}")
+    log.info("response %s", response)
+    log.info("sock %s", sock)
+    response, sock = p2p_a.throw_command(peer_a_c, InnerCmd.REQUEST_ASK_NEERS, b"{}")
     log.info("response %s", response)
     log.info("sock %s", sock)
 
