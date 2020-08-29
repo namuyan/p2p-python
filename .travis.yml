@@ -11,5 +11,5 @@ install:
   - pip3 install nose
 
 script:
-  - python3 -m mypy --config-file=mypy.ini srudp tests
-  - python3 -m nose -v tests\base.py
+  - python3 -m mypy --config-file=mypy.ini p2p_python tests
+  - python3 -m nose -v tests/base.py

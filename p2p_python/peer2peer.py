@@ -89,7 +89,7 @@ class Peer2Peer(object):
             srudp_bound: bool = False,
     ) -> None:
         self.peers: List[Peer] = list()
-        self.commands = commands
+        self.commands = commands.copy()
         self.results: Dict[int, 'Future[bytes]'] = ExpiringDict(600, 600.0)
         self.works: Dict[int, 'Future[bytes]'] = ExpiringDict(600, 600.0)
         self.pool = SockPool(self._callback_accept, secret=secret)
@@ -102,6 +102,13 @@ class Peer2Peer(object):
         # flags
         self.closed = False
         # init
+        duplicated_cmds = set(commands) & set(InnerCmd)
+        assert len(duplicated_cmds) == 0, ("duplicated cmds not allowed", duplicated_cmds)
+        self.commands.update({
+            InnerCmd.REQUEST_PEER_INFO: lambda _fnc, _body, _sock, p2p: p2p.my_info.to_bytes(),
+            InnerCmd.REQUEST_MEDIATOR: mediator_thread,
+            InnerCmd.REQUEST_ASK_SRUDP: ask_srudp_thread,
+        })
         self.pool.start()
 
     def __repr__(self) -> str:
@@ -384,19 +391,7 @@ class Peer2Peer(object):
                 res_fnc = response_generator(sock, uuid_bytes, uuid_int, result_fut)
 
             # 3. execute new work
-            if cmd == InnerCmd.REQUEST_PEER_INFO:
-                # request: return my info
-                res_fnc(_SUCCESS, self.my_info.to_bytes())
-
-            elif cmd == InnerCmd.REQUEST_MEDIATOR:
-                # request: relay via data
-                executor.submit(mediator_thread, res_fnc, body, sock, self)
-
-            elif cmd == InnerCmd.REQUEST_ASK_SRUDP:
-                # request: ask srudp connection wait
-                executor.submit(ask_srudp_thread, res_fnc, body, sock, self)
-
-            elif cmd in self.commands:
+            if cmd in self.commands:
                 # request: user defined commands
                 future = executor.submit(self.commands[cmd], res_fnc, body, sock, self)
                 callback = callback_generator(cmd, uuid_int, res_fnc, result_fut)
