@@ -3,7 +3,7 @@ tools
 
 note: don't import from other libs to escape dependency problem
 """
-from typing import List, Tuple, Dict, NamedTuple, Any, Union, Callable
+from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, NamedTuple, Any, Union, Callable
 from ipaddress import ip_address, IPv4Address, IPv6Address
 from concurrent.futures import ThreadPoolExecutor
 from Cryptodome.Cipher import AES
@@ -18,6 +18,9 @@ from io import BytesIO
 import json
 import os
 
+if TYPE_CHECKING:
+    from p2p_python.peer2peer import Peer2Peer
+    from p2p_python.sockpool import Sock
 
 # general types
 _Address = Tuple[Any, ...]
@@ -55,6 +58,26 @@ class InnerCmd(IntEnum):
 _PROCESSING = InnerCmd.RESPONSE_PROCESSING.to_bytes(1, "big")
 _SUCCESS = InnerCmd.RESPONSE_SUCCESS.to_bytes(1, "big")
 _FAILED = InnerCmd.RESPONSE_FAILED.to_bytes(1, "big")
+
+
+# cmd base class
+class CmdThreadBase(object):
+    cmd: IntEnum
+
+    @staticmethod
+    def encode(*args: Any) -> bytes:
+        """serialize any items, escape supertype error by 'type: ignore'"""
+        raise NotImplementedError("CmdThreadBase.encode()")
+
+    @staticmethod
+    def decode(io: BytesIO) -> Any:
+        """deserialize received binary"""
+        raise NotImplementedError("CmdThreadBase.decode()")
+
+    @staticmethod
+    def thread(res_fnc: _ResponseFuc, body: bytes, sock: 'Sock', p2p: 'Peer2Peer') -> Optional[bytes]:
+        """execute this when receive request, finish in 20s or timeout and return bytes or None"""
+        raise NotImplementedError("CmdThreadBase thread()")
 
 
 class FormalAddr(NamedTuple):
@@ -201,6 +224,7 @@ __all__ = [
     "_PROCESSING",
     "_SUCCESS",
     "_FAILED",
+    "CmdThreadBase",
     "FormalAddr",
     "PeerInfo",
     "uniq_id_generator",

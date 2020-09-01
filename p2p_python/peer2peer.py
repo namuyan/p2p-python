@@ -1,10 +1,11 @@
 from p2p_python.sockpool import *
 from p2p_python.peer import *
 from p2p_python.tools import *
-from p2p_python.callback import *
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
-from threading import Thread, Lock, Event
-from typing import List, Tuple, Dict, Union, Optional, Callable
+from p2p_python.peercontrol import *
+from p2p_python.connectionrelay import *
+from concurrent.futures import Future, TimeoutError
+from threading import Lock
+from typing import List, Tuple, Dict, Optional, Callable
 from Cryptodome.Random import get_random_bytes
 from expiringdict import ExpiringDict
 from ecdsa.keys import VerifyingKey
@@ -106,10 +107,10 @@ class Peer2Peer(object):
         duplicated_cmds = set(commands) & set(InnerCmd)
         assert len(duplicated_cmds) == 0, ("duplicated cmds not allowed", duplicated_cmds)
         self.commands.update({
-            InnerCmd.REQUEST_ASK_NEERS: ask_neers_thread,
-            InnerCmd.REQUEST_PEER_INFO: lambda _f, _b, _s, p2p: p2p.my_info.to_bytes(BytesIO()).tobytes(),
-            InnerCmd.REQUEST_MEDIATOR: mediator_thread,
-            InnerCmd.REQUEST_ASK_SRUDP: ask_srudp_thread,
+            InnerCmd.REQUEST_ASK_NEERS: AskNeersCmd.thread,
+            InnerCmd.REQUEST_PEER_INFO: PeerInfoCmd.thread,
+            InnerCmd.REQUEST_MEDIATOR: MediatorCmd.thread,
+            InnerCmd.REQUEST_ASK_SRUDP: AskSrudpCmd.thread,
         })
         self.pool.start()
 
@@ -180,9 +181,9 @@ class Peer2Peer(object):
 
             # request srudp connect
             new_addr = FormalAddr(my_address.host, random.randint(1024, 65535))
-            body = ask_srudp_cmd_encoder(self.my_info, new_addr)
+            body = AskSrudpCmd.encode(self.my_info, new_addr)
             response, _sock = self.throw_command(peer, InnerCmd.REQUEST_ASK_SRUDP, body)
-            dest_info, dest_addr = ask_srudp_cmd_decoder(response)
+            dest_info, dest_addr = AskSrudpCmd.decode(BytesIO(response))
 
             # check
             assert dest_addr.host.version == my_address.host.version, (dest_addr, my_address)
@@ -226,9 +227,9 @@ class Peer2Peer(object):
             raise AssertionError(f"request family is {family_ver} but not found in my_info")
 
         # request intermediate work
-        body = mediator_cmd_encoder(self.my_info, issuer_address, dest_pubkey)
+        body = MediatorCmd.encode(self.my_info, issuer_address, dest_pubkey)
         response, _sock = self.throw_command(mediator, InnerCmd.REQUEST_MEDIATOR, body)
-        dest_info, dest_addr = mediator_cmd_decoder(response)
+        dest_info, dest_addr = MediatorCmd.decode(BytesIO(response))
 
         # check
         assert my_address.host.is_loopback is dest_addr.host.is_loopback, (my_address, dest_addr)
@@ -283,7 +284,7 @@ class Peer2Peer(object):
             log.warning(f"timeout on waiting for {sock} of {peer}")
 
         # update peer info
-        response, _sock = self.throw_command(peer, InnerCmd.REQUEST_PEER_INFO, DUMMY_MSG)
+        response, _sock = self.throw_command(peer, InnerCmd.REQUEST_PEER_INFO, b"")
         peer.info = PeerInfo.from_bytes(BytesIO(response))
 
         # success
@@ -385,7 +386,7 @@ class Peer2Peer(object):
                 if result_fut.done():
                     sock.sendall(result_fut.result())
                 else:
-                    sock.sendall(_PROCESSING + uuid_bytes + DUMMY_MSG)
+                    sock.sendall(_PROCESSING + uuid_bytes + b"")
                 log.debug(f"{sock} will be unstable because same request received uuid={uuid_int}")
                 return
             else:
@@ -443,7 +444,7 @@ class Peer2Peer(object):
 
                 # update peer info
                 assert sock in pool.socks, (sock, pool.socks)
-                response, _sock = self.throw_command(new_peer, InnerCmd.REQUEST_PEER_INFO, DUMMY_MSG)
+                response, _sock = self.throw_command(new_peer, InnerCmd.REQUEST_PEER_INFO, b"")
                 new_peer.info = PeerInfo.from_bytes(BytesIO(response))
                 log.debug(f"accept {new_peer}")
 
