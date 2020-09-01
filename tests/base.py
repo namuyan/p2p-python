@@ -53,7 +53,7 @@ def test_sock() -> None:
     raw_sock = socket()
     raw_sock.bind(("127.0.0.1", port))
     raw_sock.listen(5)
-    raw_sock.setblocking(False)
+    raw_sock.settimeout(0.0)
     pool_a.add_sock(Sock(raw_sock, printer1, SockType.SERVER, None, pool_a.secret_key))
 
     log.info("step 2")
@@ -64,7 +64,7 @@ def test_sock() -> None:
     # setup client
     raw_sock = socket()
     raw_sock.connect(("127.0.0.1", port))
-    raw_sock.setblocking(False)
+    raw_sock.settimeout(0.0)
     pool_b.add_sock(Sock(raw_sock, printer1, SockType.OUTBOUND, None, pool_b.secret_key))
 
     # wait connection established

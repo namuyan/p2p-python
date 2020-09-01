@@ -152,7 +152,7 @@ class AskSrudpCmd(CmdThreadBase):
 
             # wait for establish
             # note: raise ConnectionError if failed
-            new_sock.setblocking(False)
+            new_sock.settimeout(0.0)
             issuer_sock = Sock(
                 new_sock, p2p._callback_recv, SockType.INBOUND, issuer_info.public_key, p2p.pool.secret_key)
             p2p.pool.add_sock(issuer_sock)

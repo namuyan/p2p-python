@@ -161,7 +161,7 @@ class Peer2Peer(object):
         sock = socket(family, s.SOCK_STREAM)
         sock.bind(address)
         sock.listen(10)
-        sock.setblocking(False)
+        sock.settimeout(0.0)
         server = Sock(sock, self._callback_recv, SockType.SERVER, None, self.pool.secret_key)
         self.pool.add_sock(server)
 
@@ -200,7 +200,7 @@ class Peer2Peer(object):
             sock.connect(address.to_address())
 
         # add pool
-        sock.setblocking(False)
+        sock.settimeout(0.0)
         client = Sock(sock, self._callback_recv, SockType.OUTBOUND, others_key, self.pool.secret_key)
         self.pool.add_sock(client)
         peer.socks.append(client)
@@ -244,7 +244,7 @@ class Peer2Peer(object):
             raw_sock.connect(dest_addr.to_address())
 
         # create sock
-        raw_sock.setblocking(False)
+        raw_sock.settimeout(0.0)
         sock = Sock(raw_sock, self._callback_recv, SockType.OUTBOUND, dest_pubkey, self.pool.secret_key)
         self.pool.add_sock(sock)
 
@@ -270,7 +270,7 @@ class Peer2Peer(object):
         raw_sock.connect(address.to_address())
 
         # sock
-        raw_sock.setblocking(False)
+        raw_sock.settimeout(0.0)
         sock = Sock(raw_sock, self._callback_recv, SockType.OUTBOUND, public_key, self.pool.secret_key)
         self.pool.add_sock(sock)
 

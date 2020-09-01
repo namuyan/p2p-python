@@ -327,7 +327,7 @@ class Sock(object):
             others_key: Optional[VerifyingKey],
             secret_key: SigningKey,
     ):
-        assert sock.getblocking() is False, "only non-blocking mode"
+        assert sock.gettimeout() == 0.0, "only non-blocking mode"
         assert sock.family in (s.AF_INET, s.AF_INET6)
         assert sock.type == s.SOCK_STREAM
         self.id = get_uuid()
@@ -607,7 +607,7 @@ class SockPool(Thread):
                     if sock.stype is SockType.SERVER:
                         # server type
                         raw_sock, _address = sock.sock.accept()
-                        raw_sock.setblocking(False)
+                        raw_sock.settimeout(0.0)
                         new_sock = Sock(raw_sock, sock.callback, SockType.INBOUND, None, self.secret_key)
                         with self.lock:
                             self.socks.append(new_sock)
