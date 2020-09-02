@@ -144,8 +144,7 @@ class InnerWorkEncryption(InnerWorkBase):
             assert str(obj.get("curve")) == CURVE.name, "{} is not same curve".find(obj.get("curve"))
             assert "public-key" in obj
             other_pk = VerifyingKey.from_string(a2b_hex(obj["public-key"]), curve=CURVE)
-            shared_point = my_sk.privkey.secret_multiplier * other_pk.pubkey.point
-            shared_key = sha256(shared_point.x().to_bytes(32, 'big')).digest()
+            shared_key = get_shared_key(my_sk, other_pk)
             common_key = get_random_bytes(32)
             encrypted_key = encrypt(shared_key, common_key)
             self.send_json({
@@ -161,8 +160,7 @@ class InnerWorkEncryption(InnerWorkBase):
             obj = self.recv_json()
             assert "public-key" in obj
             other_pk = VerifyingKey.from_string(a2b_hex(obj["public-key"]), curve=CURVE)
-            shared_point = my_sk.privkey.secret_multiplier * other_pk.pubkey.point
-            shared_key = sha256(shared_point.x().to_bytes(32, 'big')).digest()
+            shared_key = get_shared_key(my_sk, other_pk)
             assert "encrypted-key" in obj
             common_key = decrypt(shared_key, a2b_hex(obj["encrypted-key"]))
             encrypted_msg = encrypt(shared_key, established_msg)
@@ -329,7 +327,7 @@ class Sock(object):
     ):
         assert sock.gettimeout() == 0.0, "only non-blocking mode"
         assert sock.family in (s.AF_INET, s.AF_INET6)
-        assert sock.type == s.SOCK_STREAM
+        assert sock.type & s.SOCK_STREAM, (sock, s.SOCK_STREAM)
         self.id = get_uuid()
         self.sock = sock
         self.lock = Lock()
@@ -658,7 +656,6 @@ class SockPool(Thread):
 
         if sock.stype is SockType.SERVER:
             assert sock.others_key is None
-            assert sock.sock.type == s.SOCK_STREAM
             sock.stable.set()
 
         elif sock.stype is SockType.INBOUND:

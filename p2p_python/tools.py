@@ -8,13 +8,14 @@ from ipaddress import ip_address, IPv4Address, IPv6Address
 from concurrent.futures import ThreadPoolExecutor
 from Cryptodome.Cipher import AES
 from Cryptodome.Cipher._mode_gcm import GcmMode
-from ecdsa.keys import VerifyingKey
+from ecdsa.keys import SigningKey, VerifyingKey
 from ecdsa.curves import SECP256k1
 from binascii import a2b_hex
 from socket import AddressFamily
 from threading import Lock
 from enum import IntEnum
 from io import BytesIO
+from hashlib import sha256
 import json
 import os
 
@@ -212,6 +213,12 @@ def decrypt(key: bytes, data: bytes) -> bytes:
     return cipher.decrypt_and_verify(data[32:], data[16:32])
 
 
+def get_shared_key(sk: SigningKey, pk: VerifyingKey, nonce: bytes = b"") -> bytes:
+    """calculate shared point and hashed by sha256"""
+    shared_point = sk.privkey.secret_multiplier * pk.pubkey.point
+    return sha256(int(shared_point.x()).to_bytes(32, 'big') + nonce).digest()
+
+
 __all__ = [
     "_Address",
     "_Host",
@@ -231,4 +238,5 @@ __all__ = [
     "time2string",
     "encrypt",
     "decrypt",
+    "get_shared_key",
 ]
