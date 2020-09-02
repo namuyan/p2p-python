@@ -73,6 +73,12 @@ class Peer(object):
                 return True
         return False
 
+    def is_stable(self) -> bool:
+        for sock in self.socks:
+            if sock.stable.is_set():
+                return True
+        return False
+
     def close(self) -> None:
         for sock in self.socks:
             sock.close()

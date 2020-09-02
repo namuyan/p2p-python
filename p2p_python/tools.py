@@ -42,6 +42,7 @@ executor = ThreadPoolExecutor(20, thread_name_prefix="Ex")
 class InnerCmd(IntEnum):
     """don't overwrite this cmd id"""
     # peer control cmd
+    REQUEST_TRACEROUTE = 0xf8  # 248
     REQUEST_ASK_NEERS = 0xf9  # 249
     REQUEST_PEER_INFO = 0xfa  # 250
 

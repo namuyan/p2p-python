@@ -1,6 +1,7 @@
 from p2p_python.sockpool import *
 from p2p_python.peer import *
 from p2p_python.tools import *
+from p2p_python.traceroute import *
 from p2p_python.peercontrol import *
 from p2p_python.connectionrelay import *
 from concurrent.futures import Future, TimeoutError
@@ -107,6 +108,7 @@ class Peer2Peer(object):
         duplicated_cmds = set(commands) & set(InnerCmd)
         assert len(duplicated_cmds) == 0, ("duplicated cmds not allowed", duplicated_cmds)
         self.commands.update({
+            InnerCmd.REQUEST_TRACEROUTE: TracerouteCmd.thread,
             InnerCmd.REQUEST_ASK_NEERS: AskNeersCmd.thread,
             InnerCmd.REQUEST_PEER_INFO: PeerInfoCmd.thread,
             InnerCmd.REQUEST_MEDIATOR: MediatorCmd.thread,
