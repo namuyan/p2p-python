@@ -7,12 +7,13 @@ from Cryptodome.Cipher import PKCS1_OAEP
 from ecdsa.keys import VerifyingKey
 from hashlib import sha256
 from io import BytesIO
+from time import time
 import random
 import logging
 
 
 log = logging.getLogger(__name__)
-DEFAULT_VERSION = 1
+
 
 if TYPE_CHECKING:
     from p2p_python.peer2peer import Peer2Peer
@@ -99,26 +100,31 @@ class TracerouteCmd(CmdThreadBase):
         # get random next hop peer
         peers = p2p.peers.copy()
         random.shuffle(peers)
+        now = time()
+        tried = 0
         for next_peer in peers:
-            if not next_peer.is_stable():
+            if 20.0 < time() - now:
+                raise ConnectionAbortedError("timeout on checking peers")
+            elif not next_peer.is_stable():
                 continue  # skip unstable
             elif sock in next_peer.socks:
                 continue  # skip origin of cmd sender
             else:
                 # success to get random next node
+                tried += 1
                 try:
                     body = TracerouteCmd.encode(nonce, src_pk, dst_pk, hop - 1)
                     response, _sock = p2p.throw_command(next_peer, InnerCmd.REQUEST_TRACEROUTE, body)
                     return fut.result(20.0) + response
                 except ConnectionError as e:
-                    log.debug(f"failed to traceroute next peer peer={next_peer} by {e}")
+                    log.debug(f"failed to traceroute next peer hop={hop} peer={next_peer} by {e}")
                     continue
         else:
-            raise Exception("not found next hop peer")
+            raise ConnectionAbortedError(f"not found next hop peer tried={tried} all={len(peers)}")
 
 
 def traceroute_network(p2p: 'Peer2Peer', dest_pk: VerifyingKey) -> List[VerifyingKey]:
-    """"""
+    """throw traceroute commands and get """
     # generate temporary RSA key
     nonce = get_random_bytes(32)
     src_tmp_sk = RSA.generate(2048)
@@ -126,12 +132,21 @@ def traceroute_network(p2p: 'Peer2Peer', dest_pk: VerifyingKey) -> List[Verifyin
     log.debug(f"traceroute start nonce={nonce.hex()} dest={dest_pk}")
 
     # trow work
-    peer = p2p.get_random_peer()
-    assert peer is not None, "not found stable peer"
-    body = TracerouteCmd.encode(nonce, src_tmp_pk, dest_pk, random.randint(8, 12))
-    response, _sock = p2p.throw_command(peer, InnerCmd.REQUEST_TRACEROUTE, body)
-    enc_keys = TracerouteCmd.decode(BytesIO(response))
-    log.debug(f"traceroute success len={len(enc_keys)}")
+    peers = p2p.peers.copy()
+    random.shuffle(peers)
+    for peer in peers:
+        if not peer.is_stable():
+            continue
+        body = TracerouteCmd.encode(nonce, src_tmp_pk, dest_pk, random.randint(8, 12))
+        try:
+            response, _sock = p2p.throw_command(peer, InnerCmd.REQUEST_TRACEROUTE, body)
+            enc_keys = TracerouteCmd.decode(BytesIO(response))
+            log.debug(f"traceroute success len={len(enc_keys)}")
+            break
+        except ConnectionError as e:
+            log.debug(f"failed traceroute by {e}")
+    else:
+        raise ConnectionAbortedError("not found stable peer")
 
     # decrypt route keys
     cipher = PKCS1_OAEP.new(src_tmp_sk)
@@ -142,7 +157,7 @@ def traceroute_network(p2p: 'Peer2Peer', dest_pk: VerifyingKey) -> List[Verifyin
         assert pk.verify(sign, nonce, hashfunc=sha256), ("verify failed", pk)
         route.append(pk)
     assert 0 < len(route), ("route is too short", route)
-    assert route[-1] == dest_pk, ("ordered neer to far", route, dest_pk)
+    assert route[-1] == dest_pk, ("destination is wrong pubkey", route[-1], dest_pk)
     return route
 
 

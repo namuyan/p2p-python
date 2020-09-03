@@ -1,6 +1,7 @@
 from p2p_python.peer2peer import *
 from p2p_python.tools import *
 from p2p_python.traceroute import traceroute_network
+from typing import Dict
 from ipaddress import ip_address
 import socket as s
 import logging
@@ -81,3 +82,54 @@ def test_traceroute() -> None:
     p2p_b.close()
     p2p_c.close()
     p2p_d.close()
+
+
+def test_spider_network() -> None:
+    """
+    spider network is difficult to traceroute
+    """
+    num = 20
+    assert 5 < num
+    localhost = ip_address("127.0.0.1")
+    p2ps = list()
+    start = random.randint(10000, 30000)
+    for port in range(start, start + num):
+        p2p = Peer2Peer(dict(), [FormalAddr(localhost, port)], tcp_server=True)
+        p2p.add_server_sock(localhost, port, s.AF_INET)
+        p2ps.append(p2p)
+    log.info("p2ps len=%d", len(p2ps))
+
+    key2name: Dict[bytes, str] = {
+        p2p.my_info.public_key.to_string("compressed"): "P{:0>2}".format(index)
+        for index, p2p in enumerate(p2ps)}
+    for pk, name in key2name.items():
+        log.info("show pubkey %s=%s", name, pk.hex())
+
+    # connect
+    peers = list()
+    connected = [p2ps[0]]
+    for dest_p2p in p2ps[1:]:
+        src_p2p = random.choice(connected)
+        port = dest_p2p.my_info.addresses[0][1]
+        peer = src_p2p.add_peer_by_address(localhost, port, dest_p2p.my_info.public_key)
+        assert peer.wait_stable(), peer
+        peers.append(peer)
+        connected.append(dest_p2p)
+        log.info("join %s-%s",
+                 key2name[src_p2p.my_info.public_key.to_string("compressed")],
+                 key2name[dest_p2p.my_info.public_key.to_string("compressed")])
+
+    # traceroute
+    src_p2p = p2ps[0]
+    dest_p2p = connected[-1]
+    log.info("trace route %s -> %s",
+             key2name[src_p2p.my_info.public_key.to_string("compressed")],
+             key2name[dest_p2p.my_info.public_key.to_string("compressed")])
+    route = traceroute_network(src_p2p, dest_p2p.my_info.public_key)
+    for i, key in enumerate(route):
+        log.info("traced result %d: %s", i, key2name.get(key.to_string("compressed")))
+
+    # close
+    log.info("close")
+    for p2p in p2ps:
+        p2p.close()
