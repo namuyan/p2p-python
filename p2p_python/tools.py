@@ -11,7 +11,6 @@ from Cryptodome.Cipher._mode_gcm import GcmMode
 from ecdsa.keys import SigningKey, VerifyingKey
 from ecdsa.curves import SECP256k1
 from binascii import a2b_hex
-from socket import AddressFamily
 from threading import Lock
 from enum import IntEnum
 from io import BytesIO
@@ -33,7 +32,7 @@ _ResponseFuc = Callable[[bytes, bytes], None]
 CURVE = SECP256k1
 
 # debug print socket receive/send message all
-PRINT_SOCK_MSG = bool(os.getenv("PRINT_SOCK_MSG"))
+PRINT_SOCK_MSG = os.getenv("PRINT_SOCK_MSG", "false") == "true"
 
 # 20 thread pooled for general usage (not for loop work)
 executor = ThreadPoolExecutor(20, thread_name_prefix="Ex")
@@ -143,6 +142,12 @@ class PeerInfo(NamedTuple):
     tcp_server: bool
     srudp_bound: bool
 
+    def get_address(self, ver: int) -> Optional[FormalAddr]:
+        for addr in self.addresses:
+            if addr.host.version == ver:
+                return addr
+        return None
+
     def to_bytes(self, io: BytesIO) -> memoryview:
         data = json.dumps({
             "addresses": [addr.to_string() for addr in self.addresses],
@@ -167,6 +172,9 @@ class PeerInfo(NamedTuple):
             bool(obj["tcp_server"]),
             bool(obj["srudp_bound"]),
         )
+
+    def __hash__(self) -> int:
+        return hash(self.public_key.pubkey.point.x())
 
     def __eq__(self, other: object) -> bool:
         """only check public key"""
