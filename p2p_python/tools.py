@@ -111,12 +111,11 @@ class FormalAddr(NamedTuple):
         host_str, port_str = s.rsplit(":", 1)
         return FormalAddr(ip_address(host_str.lstrip("[").rstrip("]")), int(port_str))
 
-    def to_bytes(self, io: BytesIO) -> memoryview:
+    def to_bytes(self, io: BytesIO) -> None:
         io.write(self.port.to_bytes(4, "big"))
         host_bytes = self.host.packed
         io.write(len(host_bytes).to_bytes(4, "big"))
         io.write(host_bytes)
-        return io.getbuffer()
 
     def to_address(self) -> _Address:
         if self.host.version == 4:
@@ -148,7 +147,7 @@ class PeerInfo(NamedTuple):
                 return addr
         return None
 
-    def to_bytes(self, io: BytesIO) -> memoryview:
+    def to_bytes(self, io: BytesIO) -> None:
         data = json.dumps({
             "addresses": [addr.to_string() for addr in self.addresses],
             "public_key": self.public_key.to_string().hex(),
@@ -157,7 +156,6 @@ class PeerInfo(NamedTuple):
         }).encode()
         io.write(len(data).to_bytes(4, "big"))
         io.write(data)
-        return io.getbuffer()
 
     @classmethod
     def from_bytes(cls, io: BytesIO) -> 'PeerInfo':
@@ -228,6 +226,18 @@ def get_shared_key(sk: SigningKey, pk: VerifyingKey, nonce: bytes = b"") -> byte
     return sha256(int(shared_point.x()).to_bytes(32, 'big') + nonce).digest()
 
 
+def pubkey_to_bytes(pk: VerifyingKey, io: BytesIO) -> None:
+    pk_bytes = pk.to_string()
+    io.write(len(pk_bytes).to_bytes(4, "big"))
+    io.write(pk_bytes)
+
+
+def pubkey_from_bytes(io: BytesIO) -> VerifyingKey:
+    length = int.from_bytes(io.read(4), "big")
+    pk_bytes = io.read(length)
+    return VerifyingKey.from_string(pk_bytes, curve=CURVE)
+
+
 __all__ = [
     "_Address",
     "_Host",
@@ -248,4 +258,6 @@ __all__ = [
     "encrypt",
     "decrypt",
     "get_shared_key",
+    "pubkey_to_bytes",
+    "pubkey_from_bytes",
 ]

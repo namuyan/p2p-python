@@ -39,9 +39,7 @@ class TracerouteCmd(CmdThreadBase):
         src_pk_bytes = src_pk.export_key("DER")
         io.write(len(src_pk_bytes).to_bytes(4, "big"))
         io.write(src_pk_bytes)
-        dest_pk_bytes = dest_pk.to_string()
-        io.write(len(dest_pk_bytes).to_bytes(4, "big"))
-        io.write(dest_pk_bytes)
+        pubkey_to_bytes(dest_pk, io)
         io.write(hop.to_bytes(4, "big"))
         return io.getvalue()
 
@@ -74,8 +72,7 @@ class TracerouteCmd(CmdThreadBase):
         nonce = io.read(nonce_len)
         src_pk_len = int.from_bytes(io.read(4), "big")
         src_pk = RSA.import_key(io.read(src_pk_len))
-        dst_pk_len = int.from_bytes(io.read(4), "big")
-        dst_pk = VerifyingKey.from_string(io.read(dst_pk_len), curve=CURVE)
+        dst_pk = pubkey_from_bytes(io)
         hop = int.from_bytes(io.read(4), "big")
         assert hop < 30, ("hop is too large", hop)
 
