@@ -192,10 +192,8 @@ class Peer2Peer(object):
 
             # connect
             sock = SecureReliableSocket(family)
-            if dest_addr.host.is_loopback:
-                sock.connect(dest_addr.to_address(), new_addr[1])
-            else:
-                sock.connect(dest_addr.to_address())
+            sock.connect(new_addr)
+
         else:
             # connect
             sock = socket(family, s.SOCK_STREAM)
@@ -223,27 +221,24 @@ class Peer2Peer(object):
         for my_address in self.my_info.addresses:
             if my_address.host.version == family_ver:
                 # select random port number by issuer
-                issuer_address = FormalAddr(my_address.host, random.randint(1024, 65535))
+                issuer_addr = FormalAddr(my_address.host, random.randint(1024, 65535))
                 break
         else:
             raise AssertionError(f"request family is {family_ver} but not found in my_info")
 
         # request intermediate work
-        body = MediatorCmd.encode(self.my_info, issuer_address, dest_pubkey)
+        body = MediatorCmd.encode(self.my_info, issuer_addr, dest_pubkey)
         response, _sock = self.throw_command(mediator, InnerCmd.REQUEST_MEDIATOR, body)
         dest_info, dest_addr = MediatorCmd.decode(BytesIO(response))
 
         # check
-        assert my_address.host.is_loopback is dest_addr.host.is_loopback, (my_address, dest_addr)
+        assert my_address.host.is_loopback is dest_addr.host.is_loopback, \
+            ("contamination of local with global not allowed", my_address, dest_addr)
         assert my_address.host.version == dest_addr.host.version, (my_address, dest_addr)
 
         # try to connect
         raw_sock = SecureReliableSocket(s.AF_INET if family_ver == 4 else s.AF_INET6)
-        if dest_addr.host.is_loopback:
-            log.debug(f"you connect to loopback->{dest_addr}")
-            raw_sock.connect(dest_addr.to_address(), issuer_address.port)
-        else:
-            raw_sock.connect(dest_addr.to_address())
+        raw_sock.connect(dest_addr.to_address())
 
         # create sock
         raw_sock.settimeout(0.0)

@@ -1,4 +1,4 @@
 expiringdict
 pycryptodomex
 ecdsa>=0.15
-srudp>=0.3.6
+srudp>=0.3.7

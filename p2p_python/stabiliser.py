@@ -75,16 +75,19 @@ class Stabilizer(object):
         self.neers_infos.clear()
         for peer in self.p2p.peers.copy():
             try:
+                assert peer.wait_stable(), ("wait stable but timeout", peer)
                 response, _sock = self.p2p.throw_command(peer, InnerCmd.REQUEST_ASK_NEERS, b"")
                 neers = AskNeersCmd.decode(BytesIO(response))
                 self.neers_infos.add(MetaInfo(peer, neers, time()))
                 self.known_infos.add(peer.info)
                 self.known_infos.update(neers)
                 success += 1
+            except AssertionError as e:
+                log.debug(e)
             except ConnectionError:
-                continue
+                pass
             except OSError:  # socket is closed
-                continue
+                pass
 
         # check duplicate
         all_neer_list = list()

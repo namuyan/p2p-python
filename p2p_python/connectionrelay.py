@@ -115,21 +115,14 @@ class AskSrudpCmd(CmdThreadBase):
         # find my address (destination)
         for address in p2p.my_info.addresses:
             if address.host.version == issuer_addr.host.version:
-                if issuer_addr.host.is_loopback:
-                    dest_addr = FormalAddr(address.host, random.randint(1024, 65535))
-                else:
-                    dest_addr = FormalAddr(address.host, issuer_addr.port)
+                dest_addr = FormalAddr(address.host, issuer_addr.port)
                 break
         else:
             raise AssertionError("not found my connect address")
 
         # srudp connect
         new_sock = SecureReliableSocket(s.AF_INET if issuer_addr.host.version == 4 else s.AF_INET6)
-        if issuer_addr.host.is_loopback:
-            log.debug(f"issuer's address is loopback {issuer_addr}")
-            fut = executor.submit(new_sock.connect, issuer_addr, dest_addr.port)
-        else:
-            fut = executor.submit(new_sock.connect, issuer_addr)
+        fut = executor.submit(new_sock.connect, issuer_addr)
 
         # return response
         io = BytesIO()
