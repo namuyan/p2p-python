@@ -693,7 +693,7 @@ class SockPool(Thread):
             else:
                 pass
         except ConnectionError as e:
-            log.debug("ConnectionError", e)
+            log.debug("ConnectionError %s", e)
         except Exception:
             log.debug("Exception", exc_info=True)
 

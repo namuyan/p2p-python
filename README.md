@@ -3,16 +3,13 @@ p2p-python
 I seek a library that can make a simple P2P network.  
 This library enables you create P2P application.
 
-[old v3 branch](https://github.com/namuyan/p2p-python/tree/v3.0.5)
-
 [![Build Status](https://travis-ci.org/namuyan/p2p-python.svg?branch=master)](https://travis-ci.org/namuyan/p2p-python)
 [![Downloads](https://pepy.tech/badge/p2p-python)](https://pepy.tech/project/p2p-python)
 
 ## Specification
-* **rewrite whole library**
-* full typing
-* ~~Asynchronous IO~~
-* Pure Python code
+* rewrite whole library [old v3](https://github.com/namuyan/p2p-python/tree/v3.0.5)
+* full typed
+* Pure Python
 * TCP and SRUDP(pseudo TCP) connection
 * Automatic network build
 * Python**3.6+**
