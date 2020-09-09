@@ -27,6 +27,7 @@ import zlib
 get_uuid = uniq_id_generator()
 CallbackReceive = Callable[[bytes, 'Sock'], None]
 CallbackAccept = Callable[['Sock', 'SockPool'], None]
+CallbackClose = Callable[['Sock', 'SockPool'], None]
 log = logging.getLogger(__name__)
 
 
@@ -552,9 +553,15 @@ class Sock(object):
 
 
 class SockPool(Thread):
-    def __init__(self, callback: CallbackAccept = None, secret: bytes = None) -> None:
+    def __init__(
+            self,
+            cb_accept: CallbackAccept = None,
+            cb_close: CallbackClose = None,
+            secret: bytes = None,
+    ) -> None:
         super().__init__(name="SockPool")
-        self.callback = callback
+        self.cb_accept = cb_accept
+        self.cb_close = cb_close
         self.socks: List[Sock] = list()
         self.lock = Lock()
         if secret is None:
@@ -609,8 +616,8 @@ class SockPool(Thread):
                         new_sock = Sock(raw_sock, sock.callback, SockType.INBOUND, None, self.secret_key)
                         with self.lock:
                             self.socks.append(new_sock)
-                        if self.callback is not None:
-                            Thread(target=self.callback, args=(new_sock, self)).start()
+                        if self.cb_accept is not None:
+                            Thread(target=self.cb_accept, args=(new_sock, self)).start()
                         log.debug("accept %s", new_sock)
 
                     else:
@@ -704,6 +711,10 @@ class SockPool(Thread):
                 log.info("remove %s from sockpool", sock)
             else:
                 pass
+
+        # execute callback last
+        if self.cb_close is not None:
+            self.cb_close(sock, self)
 
     def close(self) -> None:
         """close and wait complete status"""

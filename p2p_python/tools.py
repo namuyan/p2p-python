@@ -41,24 +41,36 @@ executor = ThreadPoolExecutor(20, thread_name_prefix="Ex")
 class InnerCmd(IntEnum):
     """don't overwrite this cmd id"""
     # peer control cmd
-    REQUEST_TRACEROUTE = 0xf8  # 248
-    REQUEST_ASK_NEERS = 0xf9  # 249
-    REQUEST_PEER_INFO = 0xfa  # 250
+    REQUEST_TRACEROUTE = 0xf7  # 247
+    REQUEST_ASK_NEERS = 0xf8  # 248
+    REQUEST_PEER_INFO = 0xf9  # 249
 
     # connection relay cmd
-    REQUEST_MEDIATOR = 0xfb  # 251
-    REQUEST_ASK_SRUDP = 0xfc  # 252
+    REQUEST_MEDIATOR = 0xfa  # 250
+    REQUEST_ASK_SRUDP = 0xfb  # 251
 
     # general response cmd
-    RESPONSE_PROCESSING = 0xfd  # 253
-    RESPONSE_SUCCESS = 0xfe  # 254
-    RESPONSE_FAILED = 0xff  # 255
+    RESPONSE_PROCESSING = 0xfc  # 252
+    RESPONSE_SUCCESS = 0xfd  # 253
+    RESPONSE_FAILED = 0xfe  # 254
+    RESPONSE_PENALTY = 0xff  # 255
 
 
 # cmd response
 _PROCESSING = InnerCmd.RESPONSE_PROCESSING.to_bytes(1, "big")
 _SUCCESS = InnerCmd.RESPONSE_SUCCESS.to_bytes(1, "big")
 _FAILED = InnerCmd.RESPONSE_FAILED.to_bytes(1, "big")
+_PENALTY = InnerCmd.RESPONSE_PENALTY.to_bytes(1, "big")
+
+
+class PenaltyError(Exception):
+    """penalty error (warn point added)"""
+    def __init__(self, point: int, reason: str) -> None:
+        super().__init__()
+        assert 0 < point <= 255, ("penalty point range", point)
+        assert isinstance(reason, str), ("penalty reason is str", reason)
+        self.point = point
+        self.reason = reason
 
 
 # cmd base class
@@ -247,9 +259,11 @@ __all__ = [
     "PRINT_SOCK_MSG",
     "executor",
     "InnerCmd",
+    "PenaltyError",
     "_PROCESSING",
     "_SUCCESS",
     "_FAILED",
+    "_PENALTY",
     "CmdThreadBase",
     "FormalAddr",
     "PeerInfo",

@@ -112,6 +112,10 @@ class AskSrudpCmd(CmdThreadBase):
         issuer_info = PeerInfo.from_bytes(io)
         issuer_addr = FormalAddr.from_bytes(io)
 
+        # check already banned host
+        if issuer_addr.host in p2p.ban_host:
+            raise ConnectionRefusedError("request host is already banned")
+
         # find my address (destination)
         for address in p2p.my_info.addresses:
             if address.host.version == issuer_addr.host.version:

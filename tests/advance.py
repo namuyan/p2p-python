@@ -2,6 +2,7 @@ from p2p_python.peer2peer import *
 from p2p_python.tools import *
 from p2p_python.traceroute import traceroute_network
 from typing import Dict
+from ecdsa.keys import VerifyingKey
 from ipaddress import ip_address
 import socket as s
 import logging
@@ -133,3 +134,90 @@ def test_spider_network() -> None:
     log.info("close")
     for p2p in p2ps:
         p2p.close()
+
+
+def test_spam_penalty() -> None:
+    """
+    spam traceroute and banned
+
+    A--B--C
+    |     |
+    E-----D
+
+    A spam and BANNED by B or E
+    """
+    port_a = random.randint(10000, 30000)
+    port_b = port_a + 1
+    port_c = port_b + 1
+    port_d = port_c + 1
+    port_e = port_d + 1
+    localhost = ip_address("127.0.0.1")
+    log.info("STEP1 init A=%d, B=%d, C=%d D=%d E=%d", port_a, port_b, port_c, port_d, port_e)
+
+    p2p_a = Peer2Peer(dict(), [FormalAddr(localhost, port_a)], tcp_server=True)
+    p2p_b = Peer2Peer(dict(), [FormalAddr(localhost, port_b)], tcp_server=True)
+    p2p_c = Peer2Peer(dict(), [FormalAddr(localhost, port_c)], tcp_server=True)
+    p2p_d = Peer2Peer(dict(), [FormalAddr(localhost, port_d)], tcp_server=True)
+    p2p_e = Peer2Peer(dict(), [FormalAddr(localhost, port_e)], tcp_server=True)
+    log.info("STEP2 p2p")
+
+    key2name = {
+        p2p_a.my_info.public_key.to_string("compressed"): "A",
+        p2p_b.my_info.public_key.to_string("compressed"): "B",
+        p2p_c.my_info.public_key.to_string("compressed"): "C",
+        p2p_d.my_info.public_key.to_string("compressed"): "D",
+        p2p_e.my_info.public_key.to_string("compressed"): "E",
+    }
+    for pk, name in key2name.items():
+        log.info("show pubkey %s=%s", name, pk.hex())
+
+    # setup server
+    p2p_a.add_server_sock(localhost, port_a, s.AF_INET)
+    p2p_b.add_server_sock(localhost, port_b, s.AF_INET)
+    p2p_c.add_server_sock(localhost, port_c, s.AF_INET)
+    p2p_d.add_server_sock(localhost, port_d, s.AF_INET)
+    p2p_e.add_server_sock(localhost, port_e, s.AF_INET)
+
+    # connect
+    log.info("try to connect")
+    peer_a = p2p_a.add_peer_by_address(localhost, port_b, p2p_b.my_info.public_key)
+    peer_b = p2p_b.add_peer_by_address(localhost, port_c, p2p_c.my_info.public_key)
+    peer_c = p2p_c.add_peer_by_address(localhost, port_d, p2p_d.my_info.public_key)
+    peer_d = p2p_d.add_peer_by_address(localhost, port_e, p2p_e.my_info.public_key)
+    peer_e = p2p_e.add_peer_by_address(localhost, port_a, p2p_a.my_info.public_key)
+    assert peer_a.wait_stable(), peer_a
+    assert peer_b.wait_stable(), peer_b
+    assert peer_c.wait_stable(), peer_c
+    assert peer_d.wait_stable(), peer_d
+    assert peer_e.wait_stable(), peer_e
+
+    # penalty
+    dummy_pk = VerifyingKey.from_string(b"\x03"+b"\xfe"*32, curve=CURVE)
+    for i in range(20):
+        try:
+            traceroute_network(p2p_a, dummy_pk)
+        except PenaltyError as e:
+            log.info("punished %s", e)
+        except ConnectionAbortedError as e:
+            log.info("banned %d '%s'", i, e)
+            break
+    else:
+        raise AssertionError("not banned")
+
+    # check
+    log.info(f"A %s", p2p_a.peers)
+    log.info(f"B %s", p2p_b.peers)
+    log.info(f"C %s", p2p_c.peers)
+    log.info(f"D %s", p2p_d.peers)
+    log.info(f"E %s", p2p_e.peers)
+
+    # banned by B or E
+    assert 0 < len(p2p_b.ban_host) or 0 < len(p2p_e.ban_host), ("not banned", p2p_a, p2p_b, p2p_e)
+
+    # close
+    log.info("close")
+    p2p_a.close()
+    p2p_b.close()
+    p2p_c.close()
+    p2p_d.close()
+    p2p_e.close()

@@ -76,10 +76,6 @@ class TracerouteCmd(CmdThreadBase):
         hop = int.from_bytes(io.read(4), "big")
         assert hop < 30, ("hop is too large", hop)
 
-        # hop limit
-        if hop < 1:
-            raise ConnectionRefusedError("hop limit reached")
-
         # encrypt pubkey in another thread
         fut = executor.submit(TracerouteCmd.encrypt_pubkey, p2p, src_pk, nonce)
 
@@ -91,8 +87,12 @@ class TracerouteCmd(CmdThreadBase):
         for peer in p2p.peers:
             if peer.info.public_key == dst_pk:
                 body = TracerouteCmd.encode(nonce, src_pk, dst_pk, hop - 1)
-                response, _sock = p2p.throw_command(peer, InnerCmd.REQUEST_TRACEROUTE, body)
+                response, _sock = p2p.throw_command(peer, InnerCmd.REQUEST_TRACEROUTE, body, responsible=sock)
                 return fut.result(20.0) + response
+
+        # hop limit
+        if hop == 0:
+            raise p2p.penalty_error(sock, 1, "hop limit reached")
 
         # get random next hop peer
         peers = p2p.peers.copy()
@@ -111,7 +111,7 @@ class TracerouteCmd(CmdThreadBase):
                 tried += 1
                 try:
                     body = TracerouteCmd.encode(nonce, src_pk, dst_pk, hop - 1)
-                    response, _sock = p2p.throw_command(next_peer, InnerCmd.REQUEST_TRACEROUTE, body)
+                    response, _sock = p2p.throw_command(next_peer, InnerCmd.REQUEST_TRACEROUTE, body, responsible=sock)
                     return fut.result(20.0) + response
                 except ConnectionError as e:
                     log.debug(f"failed to traceroute next peer hop={hop} peer={next_peer} by {e}")

@@ -17,10 +17,7 @@ class Peer(object):
         self.id = get_uuid()
         self.info = info
         self.socks: List[Sock] = list()
-        # self.neers: List[PeerInfo] = list()
-        # self.warn = 0
-        # self.point = 0
-        self.score = 100  # 0~100
+        self.warn = 0
         self.time = time()
         self.lock = Lock()
 
@@ -33,7 +30,7 @@ class Peer(object):
             pubkey_hex = public_key.to_string().hex()
             pubkey_hex = pubkey_hex[:6] + ".." + pubkey_hex[-6:]
         uptime = time2string(time() - self.time)
-        return f"<Peer{self.id} {stable}/{len(self.socks)} {pubkey_hex} {uptime}>"
+        return f"<Peer{self.id} {stable}/{len(self.socks)} {pubkey_hex} {self.warn}p {uptime}>"
 
     def get_connect_address(self, family: s.AddressFamily) -> Optional[FormalAddr]:
         """get connection address format"""

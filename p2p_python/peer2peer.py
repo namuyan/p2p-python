@@ -6,7 +6,7 @@ from p2p_python.peercontrol import *
 from p2p_python.connectionrelay import *
 from concurrent.futures import Future, TimeoutError
 from threading import Lock
-from typing import List, Tuple, Dict, Optional, Callable
+from typing import List, Tuple, Set, Dict, Optional, Callable
 from Cryptodome.Random import get_random_bytes
 from expiringdict import ExpiringDict
 from ecdsa.keys import VerifyingKey
@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 
 CommandFnc = Callable[[_ResponseFuc, bytes, Sock, 'Peer2Peer'], Optional[bytes]]
+BAN_THRESHOLD = 300
 
 
 def callback_generator(
@@ -46,7 +47,11 @@ def callback_generator(
                     res_fnc(_FAILED, error.encode())
                 else:
                     status = "FINISHED"
-                return
+
+        except PenaltyError as e:
+            # penalty
+            status = "PENALTY"
+            res_fnc(_PENALTY, e.point.to_bytes(1, "big") + e.reason.encode())
         except Exception as e:
             # failed
             status = "FAIL"
@@ -77,7 +82,10 @@ def response_generator(
         else:
             response = status + uuid_bytes + msg
             result_fut.set_result(response)
-            sock.sendall(response)
+            if 0 < sock.fileno():
+                sock.sendall(response)
+            else:
+                log.debug("ignore response because socket is closed")
 
     return response_fnc
 
@@ -95,11 +103,12 @@ class Peer2Peer(object):
         self.commands = commands.copy()
         self.results: Dict[int, 'Future[bytes]'] = ExpiringDict(600, 600.0)
         self.works: Dict[int, 'Future[bytes]'] = ExpiringDict(600, 600.0)
-        self.pool = SockPool(self._callback_accept, secret=secret)
+        self.pool = SockPool(self._callback_accept, self._callback_close, secret)
         unexpected_addr = [addr for addr in addresses if not isinstance(addr, FormalAddr)]
         assert 0 == len(unexpected_addr), ("addresses is wrong", unexpected_addr)
         self.my_info = PeerInfo(
             addresses, self.pool.secret_key.verifying_key, tcp_server, srudp_bound)
+        self.ban_host: Set[_Host] = set()
         self.lock = Lock()
         self.time = time()
         # flags
@@ -304,6 +313,7 @@ class Peer2Peer(object):
             body: bytes,
             timeout: float = 20.0,
             retry: int = 2,
+            responsible: Sock = None,
     ) -> Tuple[bytes, Sock]:
         assert peer in self.peers, ("not found peer", peer)
         socks = peer.socks.copy()
@@ -322,15 +332,29 @@ class Peer2Peer(object):
             self.results[uuid_int] = future
 
         # send data and wait for response
+        punished = 0
         for num in range(1, retry + 1):
             for sock in socks:
                 try:
+                    if sock.fileno() < 0:
+                        continue
                     sock.sendall(msg)
                     result = future.result(timeout / len(socks))
                     return result, sock
+                except PenaltyError as e:
+                    if responsible is not None:
+                        raise self.penalty_error(responsible, min(e.point + 2, 255), e.reason)
+                    log.warning(f"punished {e.point}p! by {peer}: {e.reason}")
+                    punished = e.point
+                    break
                 except TimeoutError:
                     continue
             log.warning(f"retry throw_command() {num}/{retry} sock={len(socks)} uuid={uuid_int}")
+
+        # finished but incomplete
+        if 0 < punished:
+            raise PenaltyError(
+                punished, f"punished but no responsible sock! cmd={cmd} uuid={uuid_int} sock={len(socks)} peer={peer}")
         else:
             raise ConnectionError(
                 f"timeout on throw_command() cmd={cmd} uuid={uuid_int} sock={len(socks)} peer={peer}")
@@ -357,7 +381,6 @@ class Peer2Peer(object):
                 assert uuid_int in self.results, ("unknown uuid", uuid_int)
                 future = self.results[uuid_int]
                 if future.done():
-                    self.score_down(sock)
                     log.debug(f"duplicated receive msg (success) uuid={uuid_int} body={body!r}")
                 else:
                     future.set_result(body)
@@ -368,10 +391,20 @@ class Peer2Peer(object):
                 future = self.results[uuid_int]
                 if future.done():
                     log.debug(f"duplicated receive msg (failed) uuid={uuid_int} body={body!r}")
-                    self.score_down(sock)
                 else:
                     future.set_exception(ConnectionError(str(body)))
                 return
+
+            elif cmd == InnerCmd.RESPONSE_PENALTY:
+                # response: penalty by the other
+                assert uuid_int in self.results, ("unknown uuid", uuid_int)
+                future = self.results[uuid_int]
+                if future.done():
+                    log.debug(f"duplicated receive msg (failed) uuid={uuid_int} body={body!r}")
+                else:
+                    future.set_exception(PenaltyError(body[0], body[1:].decode(errors="replace")))
+                return
+
             else:
                 pass
 
@@ -421,6 +454,11 @@ class Peer2Peer(object):
         log.debug(f"try callback_accept() {sock}")
         new_peer: Peer = None
 
+        # check already banned host
+        if sock.get_opposite_host() in self.ban_host:
+            pool.close_sock(sock, b"you are already banned")
+            return
+
         try:
             # update sock's flag
             # normal TCP connection require stream protect
@@ -468,16 +506,34 @@ class Peer2Peer(object):
             self.close_peer(new_peer, reason.encode())
         log.debug(reason)
 
-    def score_down(self, sock: Sock) -> None:
-        """score down bad peer"""
+    def _callback_close(self, sock: Sock, _pool: SockPool) -> None:
+        """execute after sock closed"""
         peer = self.get_peer_by_sock(sock)
         if peer is None:
             return
-        peer.score -= 1
-        if peer.score < 0:
-            raise NotImplementedError(f"score is too low? {peer}")
+        if sock in peer.socks:
+            peer.socks.remove(sock)
+        if len(peer.socks) == 0:
+            self.close_peer(peer, b"peer's sock is empty")
+
+    def penalty_error(self, sock: Sock, point: int, reason: str) -> Exception:
+        """score down peer of the sock and raise"""
+        assert 0 <= point <= 255, ("penalty point range", point)
+        peer = self.get_peer_by_sock(sock)
+        assert peer is not None, ("unknown peer of sock", sock)
+        peer.warn += point
+        if BAN_THRESHOLD < peer.warn:
+            # disconnect and BAN
+            for sock in peer.socks:
+                assert sock.stype != SockType.SERVER, ("sock is server type", sock)
+                host = sock.get_opposite_host()
+                self.ban_host.add(host)
+                log.info(f"BANNED {host} of {peer}")
+            self.close_peer(peer, b"too match warn pont: " + reason.encode())
         else:
-            log.warning(f"peer's score down {peer}")
+            # increase warn and return FAIL response
+            log.info(f"punished {peer} {point}p by '{reason}'")
+        return PenaltyError(point, reason)
 
     def close(self) -> None:
         if self.closed is False:
