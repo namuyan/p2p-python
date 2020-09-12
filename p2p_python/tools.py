@@ -83,8 +83,8 @@ class CmdThreadBase(object):
         raise NotImplementedError("CmdThreadBase.encode()")
 
     @staticmethod
-    def decode(io: BytesIO) -> Any:
-        """deserialize received binary"""
+    def decode(*args: Any) -> Any:
+        """deserialize received binary, escape supertype error by 'type: ignore'"""
         raise NotImplementedError("CmdThreadBase.decode()")
 
     @staticmethod

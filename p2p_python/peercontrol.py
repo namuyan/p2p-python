@@ -21,7 +21,7 @@ class AskNeersCmd(CmdThreadBase):
         return b""
 
     @staticmethod
-    def decode(io: BytesIO) -> List[PeerInfo]:
+    def decode(io: BytesIO) -> List[PeerInfo]:  # type: ignore
         peers = list()
         while io.tell() < len(io.getbuffer()):
             peers.append(PeerInfo.from_bytes(io))
@@ -44,7 +44,7 @@ class PeerInfoCmd(CmdThreadBase):
         return b""
 
     @staticmethod
-    def decode(io: BytesIO) -> PeerInfo:
+    def decode(io: BytesIO) -> PeerInfo:  # type: ignore
         return PeerInfo.from_bytes(io)
 
     @staticmethod

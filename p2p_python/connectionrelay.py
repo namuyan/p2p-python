@@ -33,7 +33,7 @@ class MediatorCmd(CmdThreadBase):
         return io.getvalue()
 
     @staticmethod
-    def decode(io: BytesIO) -> Tuple[PeerInfo, FormalAddr]:
+    def decode(io: BytesIO) -> Tuple[PeerInfo, FormalAddr]:  # type: ignore
         info = PeerInfo.from_bytes(io)
         addr = FormalAddr.from_bytes(io)
         assert len(io.getbuffer()) == io.tell(), (len(io.getbuffer()), io.tell())
@@ -91,7 +91,7 @@ class AskSrudpCmd(CmdThreadBase):
         return io.getvalue()
 
     @staticmethod
-    def decode(io: BytesIO) -> Tuple[PeerInfo, FormalAddr]:
+    def decode(io: BytesIO) -> Tuple[PeerInfo, FormalAddr]:  # type: ignore
         info = PeerInfo.from_bytes(io)
         addr = FormalAddr.from_bytes(io)
         assert len(io.getbuffer()) == io.tell(), (len(io.getbuffer()), io.tell())

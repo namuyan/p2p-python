@@ -44,7 +44,7 @@ class TracerouteCmd(CmdThreadBase):
         return io.getvalue()
 
     @staticmethod
-    def decode(io: BytesIO) -> List[Tuple[bytes, bytes]]:
+    def decode(io: BytesIO) -> List[Tuple[bytes, bytes]]:  # type: ignore
         """decrypt by RSA key"""
         keys = list()
         while io.tell() < len(io.getbuffer()):
