@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 
 CommandFnc = Callable[[_ResponseFuc, bytes, Sock, 'Peer2Peer'], Optional[bytes]]
-BAN_THRESHOLD = 300
+BAN_THRESHOLD = 100
 
 
 def callback_generator(
@@ -314,11 +314,13 @@ class Peer2Peer(object):
             timeout: float = 20.0,
             retry: int = 2,
             responsible: Sock = None,
+            penalty: int = None,
     ) -> Tuple[bytes, Sock]:
         assert peer in self.peers, ("not found peer", peer)
         socks = peer.socks.copy()
         assert 0 < len(socks), f"no socket in the {peer}"
         assert 1.0 < timeout and 0 < retry, (timeout, retry)
+        assert (responsible is None) is (penalty is None), (responsible, penalty)
         timeout /= retry
 
         # encode send params
@@ -343,7 +345,8 @@ class Peer2Peer(object):
                     return result, sock
                 except PenaltyError as e:
                     if responsible is not None:
-                        raise self.penalty_error(responsible, min(e.point + 2, 255), e.reason)
+                        log.warning(f"punish {responsible} {penalty}p!")
+                        raise self.mark_penalty(responsible, penalty, e.reason)
                     log.warning(f"punished {e.point}p! by {peer}: {e.reason}")
                     punished = e.point
                     break
@@ -516,13 +519,12 @@ class Peer2Peer(object):
         if len(peer.socks) == 0:
             self.close_peer(peer, b"peer's sock is empty")
 
-    def penalty_error(self, sock: Sock, point: int, reason: str) -> Exception:
-        """score down peer of the sock and raise"""
-        assert 0 <= point <= 255, ("penalty point range", point)
+    def mark_penalty(self, sock: Sock, point: int, reason: str) -> PenaltyError:
+        """add penalty score and notify punish by raise error"""
         peer = self.get_peer_by_sock(sock)
         assert peer is not None, ("unknown peer of sock", sock)
-        peer.warn += point
-        if BAN_THRESHOLD < peer.warn:
+        peer.penalty += point
+        if BAN_THRESHOLD < peer.penalty:
             # disconnect and BAN
             for sock in peer.socks:
                 assert sock.stype != SockType.SERVER, ("sock is server type", sock)

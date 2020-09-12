@@ -89,7 +89,7 @@ def test_spider_network() -> None:
     """
     spider network is difficult to traceroute
     """
-    num = 20
+    num = 6
     assert 5 < num
     localhost = ip_address("127.0.0.1")
     p2ps = list()
@@ -193,7 +193,7 @@ def test_spam_penalty() -> None:
 
     # penalty
     dummy_pk = VerifyingKey.from_string(b"\x03"+b"\xfe"*32, curve=CURVE)
-    for i in range(20):
+    for i in range(35):
         try:
             traceroute_network(p2p_a, dummy_pk)
         except PenaltyError as e:

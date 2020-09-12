@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from p2p_python.peer2peer import Peer2Peer
 
+HOP_LIMIT = 6
+
 
 class TracerouteCmd(CmdThreadBase):
     """
@@ -29,7 +31,7 @@ class TracerouteCmd(CmdThreadBase):
     @staticmethod
     def encode(nonce: bytes, src_tmp_pk: VerifyingKey, dest_pk: VerifyingKey, hop: int) -> bytes:  # type: ignore
         assert len(nonce) == 32, ("nonce is 32bytes", nonce.hex())
-        assert hop < 30, ("hop is too large", hop)
+        assert hop < HOP_LIMIT, ("hop is too large", hop)
         io = BytesIO()
         io.write(len(nonce).to_bytes(4, "big"))
         io.write(nonce)
@@ -66,7 +68,7 @@ class TracerouteCmd(CmdThreadBase):
         src_tmp_pk = pubkey_from_bytes(io)
         dst_pk = pubkey_from_bytes(io)
         hop = int.from_bytes(io.read(4), "big")
-        assert hop < 30, ("hop is too large", hop)
+        assert hop < HOP_LIMIT, ("hop is too large", hop)
 
         # encrypt pubkey in another thread
         fut = executor.submit(TracerouteCmd.encrypt_pubkey, p2p, src_tmp_pk, nonce)
@@ -79,12 +81,13 @@ class TracerouteCmd(CmdThreadBase):
         for peer in p2p.peers:
             if peer.info.public_key == dst_pk:
                 body = TracerouteCmd.encode(nonce, src_tmp_pk, dst_pk, hop - 1)
-                response, _sock = p2p.throw_command(peer, InnerCmd.REQUEST_TRACEROUTE, body, responsible=sock)
+                response, _sock = p2p.throw_command(
+                    peer, InnerCmd.REQUEST_TRACEROUTE, body, responsible=sock, penalty=hop)
                 return fut.result(20.0) + response
 
         # hop limit
         if hop == 0:
-            raise p2p.penalty_error(sock, 1, "hop limit reached")
+            raise p2p.mark_penalty(sock, 1, "hop limit reached")
 
         # get random next hop peer
         peers = p2p.peers.copy()
@@ -103,7 +106,8 @@ class TracerouteCmd(CmdThreadBase):
                 tried += 1
                 try:
                     body = TracerouteCmd.encode(nonce, src_tmp_pk, dst_pk, hop - 1)
-                    response, _sock = p2p.throw_command(next_peer, InnerCmd.REQUEST_TRACEROUTE, body, responsible=sock)
+                    response, _sock = p2p.throw_command(
+                        next_peer, InnerCmd.REQUEST_TRACEROUTE, body, responsible=sock, penalty=hop)
                     return fut.result(20.0) + response
                 except ConnectionError as e:
                     log.debug(f"failed to traceroute next peer hop={hop} peer={next_peer} by {e}")
@@ -125,7 +129,7 @@ def traceroute_network(p2p: 'Peer2Peer', dest_pk: VerifyingKey) -> List[Verifyin
     for peer in peers:
         if not peer.is_stable():
             continue
-        body = TracerouteCmd.encode(nonce, src_tmp_pk, dest_pk, random.randint(8, 12))
+        body = TracerouteCmd.encode(nonce, src_tmp_pk, dest_pk, 5)
         try:
             response, _sock = p2p.throw_command(peer, InnerCmd.REQUEST_TRACEROUTE, body)
             route = TracerouteCmd.decode(BytesIO(response), nonce, src_tmp_sk)
