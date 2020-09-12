@@ -238,6 +238,24 @@ def get_shared_key(sk: SigningKey, pk: VerifyingKey, nonce: bytes = b"") -> byte
     return sha256(int(shared_point.x()).to_bytes(32, 'big') + nonce).digest()
 
 
+def encrypt_by_public(pk: VerifyingKey, data: bytes) -> bytes:
+    """encrypt by ECDSA public key"""
+    tmp_sk = SigningKey.generate(CURVE)
+    tmp_pk: bytes = tmp_sk.get_verifying_key().to_string()
+    shared_key = get_shared_key(tmp_sk, pk)
+    enc = encrypt(shared_key, data)
+    return len(tmp_pk).to_bytes(4, "big") + tmp_pk + len(enc).to_bytes(4, "big") + enc
+
+
+def decrypt_by_secret(sk: SigningKey, io: BytesIO) -> bytes:
+    """decrypt by ECDSA secret key"""
+    tmp_pk_len = int.from_bytes(io.read(4), "big")
+    tmp_pk = VerifyingKey.from_string(io.read(tmp_pk_len), CURVE)
+    shared_key = get_shared_key(sk, tmp_pk)
+    enc_len = int.from_bytes(io.read(4), "big")
+    return decrypt(shared_key, io.read(enc_len))
+
+
 def pubkey_to_bytes(pk: VerifyingKey, io: BytesIO) -> None:
     pk_bytes = pk.to_string()
     io.write(len(pk_bytes).to_bytes(4, "big"))
@@ -272,6 +290,8 @@ __all__ = [
     "encrypt",
     "decrypt",
     "get_shared_key",
+    "encrypt_by_public",
+    "decrypt_by_secret",
     "pubkey_to_bytes",
     "pubkey_from_bytes",
 ]
