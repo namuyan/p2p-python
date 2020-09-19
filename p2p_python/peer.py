@@ -1,8 +1,9 @@
 from p2p_python.tools import *
 from p2p_python.sockpool import Sock, SockControl
-from typing import TYPE_CHECKING, Tuple, List, Optional, Union, NamedTuple, Any
+from p2p_python.bloomfilter import BloomFilter
+from typing import List, Optional
 from ecdsa.keys import VerifyingKey
-from threading import Thread, Lock
+from threading import Lock
 from time import time
 import socket as s
 import logging
@@ -18,7 +19,10 @@ class Peer(object):
         self.info = info
         self.socks: List[Sock] = list()
         self.penalty = 0
-        self.time = time()
+        self.neers: List[PeerInfo] = list()
+        self.bloom = BloomFilter()
+        self.update_time = time()
+        self.create_time = time()
         self.lock = Lock()
 
     def __repr__(self) -> str:
@@ -29,7 +33,7 @@ class Peer(object):
         else:
             pubkey_hex = public_key.to_string().hex()
             pubkey_hex = pubkey_hex[:6] + ".." + pubkey_hex[-6:]
-        uptime = time2string(time() - self.time)
+        uptime = time2string(time() - self.create_time)
         return f"<Peer{self.id} {stable}/{len(self.socks)} {pubkey_hex} {self.penalty}p {uptime}>"
 
     def get_connect_address(self, family: s.AddressFamily) -> Optional[FormalAddr]:

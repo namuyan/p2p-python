@@ -5,7 +5,6 @@ don't import this from outside
 """
 from p2p_python.tools import *
 from p2p_python.peer import Peer
-from p2p_python.peercontrol import AskNeersCmd
 from typing import TYPE_CHECKING, List, Dict, Set, NamedTuple
 from random import random
 from enum import Enum
@@ -75,12 +74,10 @@ class Stabilizer(object):
         self.neers_infos.clear()
         for peer in self.p2p.peers.copy():
             try:
-                assert peer.wait_stable(), ("wait stable but timeout", peer)
-                response, _sock = self.p2p.throw_command(peer, InnerCmd.REQUEST_ASK_NEERS, b"")
-                neers = AskNeersCmd.decode(BytesIO(response))
-                self.neers_infos.add(MetaInfo(peer, neers, time()))
+                self.p2p.update_peer_info(peer)
+                self.neers_infos.add(MetaInfo(peer, peer.neers, time()))
                 self.known_infos.add(peer.info)
-                self.known_infos.update(neers)
+                self.known_infos.update(peer.neers)
                 success += 1
             except AssertionError as e:
                 log.debug(e)

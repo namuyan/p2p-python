@@ -1,6 +1,7 @@
 from p2p_python.sockpool import *
 from p2p_python.peer import *
 from p2p_python.tools import *
+from p2p_python.bloomfilter import BloomFilter
 from p2p_python.traceroute import *
 from p2p_python.peercontrol import *
 from p2p_python.connectionrelay import *
@@ -108,9 +109,11 @@ class Peer2Peer(object):
         assert 0 == len(unexpected_addr), ("addresses is wrong", unexpected_addr)
         self.my_info = PeerInfo(
             addresses, self.pool.secret_key.verifying_key, tcp_server, srudp_bound)
+        self.my_bloom = BloomFilter()
         self.ban_host: Set[_Host] = set()
         self.lock = Lock()
-        self.time = time()
+        self.update_time = time()
+        self.create_time = time()
         # flags
         self.closed = False
         # init
@@ -127,7 +130,7 @@ class Peer2Peer(object):
 
     def __repr__(self) -> str:
         pubkey_hex = self.my_info.public_key.to_string().hex()
-        uptime = time2string(time() - self.time)
+        uptime = time2string(time() - self.create_time)
         return f"<P2P {pubkey_hex[:6]}..{pubkey_hex[-6:]} peer={len(self.peers)} uptime={uptime}>"
 
     def get_random_peer(self) -> Optional[Peer]:
@@ -295,6 +298,28 @@ class Peer2Peer(object):
 
         # success
         return peer
+
+    def update_peer_info(self, peer: Peer) -> None:
+        """update peer's neers and bloom filter"""
+        assert peer.wait_stable(), ("wait stable but timeout", peer)
+        response, _sock = self.throw_command(peer, InnerCmd.REQUEST_ASK_NEERS, b"")
+        neers, bloom = AskNeersCmd.decode(BytesIO(response))
+        peer.neers = neers
+        # from peer's point of view, it's Layer 0,1,2,
+        # but from node's point of view, it's Layer1,2,3
+        peer.bloom = bloom
+        peer.update_time = time()
+
+    def update_bloom_filter(self) -> None:
+        """update what pubkey is neer (layer 0, 1 and 2)"""
+        bloom = BloomFilter()
+        bloom.add(self.my_info.public_key)  # layer 0
+        for peer in self.peers:
+            bloom.add(peer.info.public_key)  # layer 1
+            for info in peer.neers:
+                bloom.add(info.public_key)  # layer 2
+        self.my_bloom = bloom
+        self.update_time = time()
 
     def close_peer(self, peer: Peer, reason: bytes) -> None:
         """graceful peer close"""

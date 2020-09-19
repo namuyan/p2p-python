@@ -1,6 +1,7 @@
 from p2p_python.tools import *
 from p2p_python.sockpool import *
-from typing import TYPE_CHECKING, List
+from p2p_python.bloomfilter import BloomFilter
+from typing import TYPE_CHECKING, List, Tuple
 from io import BytesIO
 
 if TYPE_CHECKING:
@@ -9,10 +10,10 @@ if TYPE_CHECKING:
 
 class AskNeersCmd(CmdThreadBase):
     """
-    get all peer info connected specified a peer
+    get all peer infos of a specified peer
 
     * input: None
-    * output: PeerInfo + PeerInfo + ...
+    * output: PeerInfo0 + PeerInfo1 + ... + BloomFilter
     """
     cmd = InnerCmd.REQUEST_ASK_NEERS
 
@@ -21,18 +22,21 @@ class AskNeersCmd(CmdThreadBase):
         return b""
 
     @staticmethod
-    def decode(io: BytesIO) -> List[PeerInfo]:  # type: ignore
+    def decode(io: BytesIO) -> Tuple[List[PeerInfo], BloomFilter]:  # type: ignore
         peers = list()
-        while io.tell() < len(io.getbuffer()):
+        length = int.from_bytes(io.read(4), "big")
+        for _ in range(length):
             peers.append(PeerInfo.from_bytes(io))
-        assert len(io.getbuffer()) == io.tell(), (len(io.getbuffer()), io.tell())
-        return peers
+        bloom = BloomFilter.restore(io)
+        return peers, bloom
 
     @staticmethod
     def thread(_res_fnc: _ResponseFuc, _body: bytes, _sock: Sock, p2p: 'Peer2Peer') -> bytes:
         io = BytesIO()
+        io.write(len(p2p.peers).to_bytes(4, "big"))
         for peer in p2p.peers:
             peer.info.to_bytes(io)
+        p2p.my_bloom.export(io)
         return io.getvalue()
 
 
