@@ -6,7 +6,9 @@ don't import this from outside
 from p2p_python.tools import *
 from p2p_python.peer import Peer
 from typing import TYPE_CHECKING, List, Dict, Set, NamedTuple
+from threading import Thread, Event
 from random import random
+from pathlib import Path
 from enum import Enum
 from io import BytesIO
 from time import time
@@ -51,28 +53,89 @@ class MetaInfo(NamedTuple):
         return self.peer == other.peer
 
 
-class Stabilizer(object):
+class Stabilizer(Thread):
     """
     stabilize network connection
 
     * fewer duplicate connection is better
     * high-layer is better
     """
-    def __init__(self, p2p: 'Peer2Peer', max_conn: int = 30):
+    def __init__(self, p2p: 'Peer2Peer', max_conn: int = 30, path: Path = None):
+        super().__init__(name="Stabilizer")
         self.p2p = p2p
         self.max_conn = max_conn
+        self._counter = 0
+        self.path = path  # peers' info backup file path
 
         # params
         self.neers_infos: Set[MetaInfo] = set()
         self.known_infos: Set[PeerInfo] = set()
+        self.failed_infos: Set[PeerInfo] = set()
         self.duplicate_cnt: Dict[PeerInfo, int] = dict()
 
-    def update_params(self) -> None:
+        # flags
+        self.closing = Event()
+        self.closing.clear()
+        self.closed = Event()
+        self.closed.set()
+
+        # check
+        if path:
+            assert path.parent.is_dir(), ("backup file parent path is dir", path)
+
+        # init
+        if path and path.is_file():
+            self.read_back(path)
+
+    def run(self) -> None:
+        """auto update params and stabilize connection"""
+        assert self.closed.is_set()
+        assert not self.closing.is_set()
+        self.closed.clear()
+
+        while True:
+            try:
+                # wait..
+                if self.closing.wait(60.0 if self.is_stable() else 5.0):
+                    log.debug("closing is set [closing now]")
+                    break
+
+                # update
+                self.update_params(1 if self.is_stable() else None)
+
+                # improve
+                score = self.score()
+                if self.is_stable():
+                    if score < 0:
+                        self.decrease_connection(1)
+                        log.info(f"decrease connection score={score}")
+                else:
+                    self.increase_connection(1, s.AF_INET)
+                    log.info(f"increase connection score={score}")
+
+            except (ConnectionError, PenaltyError) as e:
+                log.debug(f"stabiliser failed: {e}")
+            except Exception:
+                log.error("unexpected stabiliser error", exc_info=True)
+        # closed
+        self.closed.set()
+        if self.path:
+            self.write_down(self.path)
+        log.debug("succes to close")
+
+    def close(self) -> None:
+        self.closing.set()
+        self.closed.wait()
+
+    def update_params(self, update_num: int = None) -> None:
         """get neers info from peers and update"""
+        if update_num is None:
+            update_num = len(self.p2p.peers)
+
         now = time()
         success = 0
-        self.neers_infos.clear()
-        for peer in self.p2p.peers.copy():
+        while 0 < update_num:
+            peer = self.p2p.peers[self._counter % len(self.p2p.peers)]
             try:
                 self.p2p.update_peer_info(peer)
                 self.neers_infos.add(MetaInfo(peer, peer.neers, time()))
@@ -85,6 +148,17 @@ class Stabilizer(object):
                 pass
             except OSError:  # socket is closed
                 pass
+            finally:
+                self._counter += 1
+                update_num -= 1
+
+        # remove unknown meta
+        for meta in self.neers_infos.copy():
+            if meta.peer not in self.p2p.peers:
+                self.neers_infos.remove(meta)
+
+        # update bloom filter
+        self.p2p.update_bloom_filter()
 
         # check duplicate
         all_neer_list = list()
@@ -151,8 +225,10 @@ class Stabilizer(object):
                     continue
             except ConnectionError as e:
                 log.debug(f"failed connect to {layer} {peer} by {info}, error is {e}")
+                self.failed_infos.add(info)
             except Exception:
                 log.debug(f"unexpected {layer} {peer} {info}", exc_info=True)
+                self.failed_infos.add(info)
 
             # connect success
             log.info(f"success add new connection {peer}")
@@ -199,19 +275,26 @@ class Stabilizer(object):
             return Layer.THIRD
         return Layer.FORTH
 
-    def write_down(self, path: str) -> None:
+    def write_down(self, path: Path) -> None:
         """write down all known peer info"""
+        log.debug(f"backup initial peer connection len={len(self.known_infos)}")
         io = BytesIO()
         for info in self.known_infos:
             info.to_bytes(io)
         open(path, mode="wb").write(io.getbuffer())
 
-    def read_back(self, path: str) -> None:
+    def read_back(self, path: Path) -> None:
         """read back all peer info"""
-        data = open(path, mode="rb").read()
-        io = BytesIO(data)
-        while io.tell() < len(io.getbuffer()):
-            self.known_infos.add(PeerInfo.from_bytes(io))
+        try:
+            data = open(path, mode="rb").read()
+            io = BytesIO(data)
+            while io.tell() < len(io.getbuffer()):
+                self.known_infos.add(PeerInfo.from_bytes(io))
+            log.debug(f"recover initial peer connection len={len(self.known_infos)}")
+
+        except Exception:
+            self.known_infos.clear()
+            log.warning("failed restore from backup file", exc_info=True)
 
 
 __all__ = [
